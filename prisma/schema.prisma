@@ -1,0 +1,421 @@
+// Treinta Clone - Prisma Schema
+// PostgreSQL relational schema for a full business management app
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+enum Currency {
+  USD
+  COP
+  MXN
+}
+
+enum CashRegisterStatus {
+  OPEN
+  CLOSED
+}
+
+enum ProductUnit {
+  UNIT
+  KG
+  LT
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  CREDIT
+}
+
+enum ContactType {
+  CLIENT
+  SUPPLIER
+}
+
+enum DebtStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+enum NotificationKind {
+  DEBT_DUE_SOON
+}
+
+/// Direction of a scanned paper document, chosen by the user before OCR runs.
+/// It decides which party is the issuer and where the confirmed record lands.
+enum DocumentType {
+  SALE_NOTE // Nota de venta emitida por el negocio
+  SUPPLIER_INVOICE // Factura recibida de un proveedor
+}
+
+enum ScanStatus {
+  DRAFT // Extraído por visión, pendiente de validación humana
+  CONFIRMED // Validado y volcado a Transaction
+  DISCARDED
+}
+
+// ---------- Models ----------
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  phone     String?
+  name      String
+  password  String
+  role      Role     @default(ADMIN)
+  createdAt DateTime @default(now())
+
+  businesses    Business[]
+  notifications Notification[]
+  documentScans DocumentScan[]
+
+  @@map("users")
+}
+
+model Business {
+  id        String   @id @default(cuid())
+  name      String
+  currency  Currency @default(USD)
+  userId    String
+  createdAt DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cashRegisters CashRegister[]
+  categories    Category[]
+  products      Product[]
+  transactions  Transaction[]
+  contacts      Contact[]
+  debts         Debt[]
+  notifications Notification[]
+  documentScans DocumentScan[]
+
+  @@index([userId])
+  @@map("businesses")
+}
+
+model CashRegister {
+  id            String             @id @default(cuid())
+  businessId    String
+  openedAt      DateTime           @default(now())
+  closedAt      DateTime?
+  initialAmount Decimal            @default(0)
+  finalAmount   Decimal?
+  status        CashRegisterStatus @default(OPEN)
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([businessId])
+  @@map("cash_registers")
+}
+
+model Category {
+  id         String @id @default(cuid())
+  name       String
+  businessId String
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  products     Product[]
+  transactions Transaction[]
+
+  @@index([businessId])
+  @@map("categories")
+}
+
+model Product {
+  id            String      @id @default(cuid())
+  name          String
+  barcode       String?
+  sku           String?
+  imageUrl      String?
+  categoryId    String?
+  price         Decimal
+  cost          Decimal     @default(0)
+  stock         Decimal     @default(0)
+  unit          ProductUnit @default(UNIT)
+  minStockAlert Decimal     @default(0)
+  businessId    String
+  createdAt     DateTime    @default(now())
+
+  business  Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category  Category?          @relation(fields: [categoryId], references: [id])
+  variants  ProductVariant[]
+  saleItems SaleItem[]
+  scanItems DocumentScanItem[]
+
+  // Recipe: this product AS a finished good made of ingredients
+  ingredients   Recipe[] @relation("FinishedProduct")
+  // Recipe: this product used AS an ingredient/raw material in other recipes
+  usedInRecipes Recipe[] @relation("IngredientProduct")
+
+  @@index([businessId])
+  @@index([categoryId])
+  @@index([barcode])
+  @@map("products")
+}
+
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String
+  name      String // e.g. Talla, Color, Presentación
+  price     Decimal
+  cost      Decimal @default(0)
+  stock     Decimal @default(0)
+
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  saleItems SaleItem[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model Recipe {
+  id           String  @id @default(cuid())
+  productId    String // finished product
+  ingredientId String // raw material product
+  quantityUsed Decimal
+
+  product    Product @relation("FinishedProduct", fields: [productId], references: [id], onDelete: Cascade)
+  ingredient Product @relation("IngredientProduct", fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, ingredientId])
+  @@index([productId])
+  @@index([ingredientId])
+  @@map("recipes")
+}
+
+model Transaction {
+  id             String          @id @default(cuid())
+  businessId     String
+  cashRegisterId String?
+  type           TransactionType
+  amount         Decimal
+  paymentMethod  PaymentMethod   @default(CASH)
+  concept        String
+  categoryId     String?
+  contactId      String?
+  createdAt      DateTime        @default(now())
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  cashRegister CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  category     Category?     @relation(fields: [categoryId], references: [id])
+  contact      Contact?      @relation(fields: [contactId], references: [id])
+  saleItems    SaleItem[]
+  debt         Debt?
+  debtPayments DebtPayment[]
+  documentScan DocumentScan?
+
+  @@index([businessId])
+  @@index([cashRegisterId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model SaleItem {
+  id            String  @id @default(cuid())
+  transactionId String
+  productId     String
+  variantId     String?
+  quantity      Decimal
+  unitPrice     Decimal
+  unitCost      Decimal @default(0)
+
+  transaction Transaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [productId], references: [id])
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([transactionId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+model Contact {
+  id         String      @id @default(uuid())
+  businessId String
+  name       String
+  ruc        String?
+  address    String?
+  phone      String
+  email      String?
+  type       ContactType @default(CLIENT)
+  createdAt  DateTime    @default(now())
+
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  debts         Debt[]
+  documentScans DocumentScan[]
+
+  @@index([businessId])
+  @@map("contacts")
+}
+
+model Debt {
+  id              String     @id @default(cuid())
+  businessId      String
+  contactId       String
+  transactionId   String?    @unique
+  totalAmount     Decimal
+  remainingAmount Decimal
+  status          DebtStatus @default(PENDING)
+  dueDate         DateTime?
+  createdAt       DateTime   @default(now())
+
+  // Audit stamp captured at creation time in the business time zone, so the
+  // record keeps the day/date/hour it was actually registered regardless of
+  // where the server later runs. Also feeds the reminder message template.
+  createdDayName   String?
+  createdDateLabel String?
+  createdTimeLabel String?
+
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact       Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  transaction   Transaction?   @relation(fields: [transactionId], references: [id])
+  payments      DebtPayment[]
+  notifications Notification[]
+
+  @@index([businessId])
+  @@index([contactId])
+  @@index([dueDate])
+  @@map("debts")
+}
+
+model DebtPayment {
+  id            String        @id @default(cuid())
+  debtId        String
+  amount        Decimal
+  paymentMethod PaymentMethod @default(CASH)
+  transactionId String?
+  createdAt     DateTime      @default(now())
+
+  debt        Debt         @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([debtId])
+  @@map("debt_payments")
+}
+
+/// A photographed invoice or sale note: the raw vision extraction plus the
+/// user-editable draft. Confirming a scan writes into the canonical
+/// Transaction/Debt tables, so scanned paper flows into Caja and Reportes
+/// instead of living in a parallel ledger.
+model DocumentScan {
+  id         String       @id @default(uuid())
+  businessId String
+  userId     String
+  docType    DocumentType
+  status     ScanStatus   @default(DRAFT)
+
+  imagePath      String?
+  imageMediaType String?
+
+  /// Verbatim model output, kept so a draft can be re-derived or audited
+  /// without re-running (and re-paying for) the extraction.
+  extractedJson String
+
+  // Draft header fields — pre-filled from the extraction, then corrected by
+  // the user. Nullable because a photo may be partly unreadable.
+  issuerName          String?
+  issuerTaxId         String?
+  receiverName        String?
+  receiverTaxId       String?
+  documentNumber      String?
+  authorizationNumber String?
+  issueDate           DateTime?
+  /// Total of the lines taxed at the standard rate (12% historically, 15% in
+  /// Ecuador since 2024) and of the exempt lines, kept split because tax
+  /// reporting needs them separately.
+  subtotal12          Decimal?
+  subtotal0           Decimal?
+  subtotal            Decimal?
+  taxAmount           Decimal?
+  total               Decimal?
+  currency            String?
+  /// Model's own read-quality signal: high | medium | low
+  modelConfidence     String?
+
+  transactionId String?   @unique
+  contactId     String?
+  confirmedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  business    Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transaction Transaction?       @relation(fields: [transactionId], references: [id])
+  contact     Contact?           @relation(fields: [contactId], references: [id])
+  items       DocumentScanItem[]
+
+  @@index([businessId, status])
+  @@index([docType])
+  @@map("document_scans")
+}
+
+/// Line detail read off the document. Descriptions are free text off a photo, so
+/// they live here rather than in SaleItem (which requires a catalog product and
+/// feeds the sales/margin reports). A line may optionally be linked to a
+/// Product, and only then does confirming the scan move inventory stock.
+model DocumentScanItem {
+  id          String  @id @default(uuid())
+  scanId      String
+  position    Int
+  description String
+  quantity    Decimal
+  unitPrice   Decimal
+  lineTotal   Decimal
+
+  /// Set when the user matched this line to a catalog product.
+  productId       String?
+  /// True when the linked product was created inline from this very line, with
+  /// its initial stock already set to this quantity — so confirming must not
+  /// add the same units a second time.
+  stockPreapplied Boolean @default(false)
+
+  scan    DocumentScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  product Product?     @relation(fields: [productId], references: [id])
+
+  @@index([scanId])
+  @@index([productId])
+  @@map("document_scan_items")
+}
+
+model Notification {
+  id           String           @id @default(uuid())
+  userId       String
+  businessId   String
+  debtId       String?
+  kind         NotificationKind @default(DEBT_DUE_SOON)
+  message      String
+  // When the alert became due (7 days before the debt's dueDate).
+  scheduledFor DateTime
+  readAt       DateTime?
+  createdAt    DateTime         @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  debt     Debt?    @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  // One alert of a given kind per debt keeps the scheduler idempotent: it can
+  // run as often as it likes without ever duplicating a reminder.
+  @@unique([debtId, kind])
+  @@index([userId, readAt])
+  @@index([businessId])
+  @@map("notifications")
+}
