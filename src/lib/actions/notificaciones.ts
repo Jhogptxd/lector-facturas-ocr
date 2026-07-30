@@ -44,7 +44,8 @@ export async function markAllNotificationsRead() {
   });
 
   revalidatePath("/");
-  revalidatePath("/deudas");
+  revalidatePath("/cuentas-por-cobrar");
+  revalidatePath("/cuentas-por-pagar");
   return { updated: result.count };
 }
 

@@ -130,7 +130,8 @@ export async function createTransaction(input: CreateTransactionInput) {
   });
 
   revalidatePath("/");
-  revalidatePath("/deudas");
+  revalidatePath("/cuentas-por-cobrar");
+  revalidatePath("/cuentas-por-pagar");
   revalidatePath("/inventario");
   revalidatePath("/reportes");
 

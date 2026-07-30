@@ -36,14 +36,17 @@ export async function getDebtHistory(businessId?: string) {
 }
 
 /**
- * A debt is either owed to us by an existing client (picked from the directory)
- * or owed by us to a supplier the user types in freely.
+ * A debt is either owed to us by a client or owed by us to a supplier. The
+ * counterparty is typed in freely and matched (or created) by name, so
+ * registering a brand-new debtor/supplier needs no prior setup in Contactos.
  */
 export type CreateManualDebtInput = {
+  contactName: string;
+  contactType: "CLIENT" | "SUPPLIER";
   totalAmount: number;
   concept: string;
   dueDate?: string | null;
-} & ({ contactId: string; supplierName?: never } | { supplierName: string; contactId?: never });
+};
 
 export async function createManualDebt(input: CreateManualDebtInput) {
   const business = await getCurrentBusiness();
@@ -52,20 +55,9 @@ export async function createManualDebt(input: CreateManualDebtInput) {
     throw new Error("El monto total debe ser mayor a cero.");
   }
 
-  let contactId: string;
-  let contactType: "CLIENT" | "SUPPLIER";
-
-  if (input.supplierName !== undefined) {
-    const supplier = await resolveContactByName(business.id, input.supplierName, "SUPPLIER");
-    contactId = supplier.id;
-    contactType = "SUPPLIER";
-  } else {
-    const contact = await prisma.contact.findFirstOrThrow({
-      where: { id: input.contactId, businessId: business.id },
-    });
-    contactId = contact.id;
-    contactType = contact.type;
-  }
+  const contact = await resolveContactByName(business.id, input.contactName, input.contactType);
+  const contactId = contact.id;
+  const contactType = input.contactType;
 
   const activeRegister = await prisma.cashRegister.findFirst({
     where: { businessId: business.id, status: "OPEN" },
@@ -97,6 +89,7 @@ export async function createManualDebt(input: CreateManualDebtInput) {
         businessId: business.id,
         contactId,
         transactionId: transaction.id,
+        description: input.concept,
         totalAmount: input.totalAmount,
         remainingAmount: input.totalAmount,
         dueDate: input.dueDate ? new Date(input.dueDate) : null,
@@ -116,7 +109,8 @@ export async function createManualDebt(input: CreateManualDebtInput) {
     await generateDueDateReminders({ businessId: business.id });
   }
 
-  revalidatePath("/deudas");
+  revalidatePath("/cuentas-por-cobrar");
+  revalidatePath("/cuentas-por-pagar");
   revalidatePath("/");
   revalidatePath("/contactos");
 
@@ -124,6 +118,7 @@ export async function createManualDebt(input: CreateManualDebtInput) {
   // only plain values are returned.
   return {
     id: result.id,
+    description: result.description,
     totalAmount: Number(result.totalAmount),
     remainingAmount: Number(result.remainingAmount),
     status: result.status,
@@ -182,7 +177,8 @@ export async function createDebtPayment(debtId: string, amount: number, paymentM
     return transaction;
   });
 
-  revalidatePath("/deudas");
+  revalidatePath("/cuentas-por-cobrar");
+  revalidatePath("/cuentas-por-pagar");
   revalidatePath("/");
   revalidatePath("/contactos");
   revalidatePath("/reportes");

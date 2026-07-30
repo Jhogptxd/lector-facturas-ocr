@@ -130,9 +130,10 @@ prisma/schema.prisma        Modelos: User, Business, CashRegister, Category, Pro
 src/lib/actions/            Server Actions (caja, inventario, contactos, deudas, reportes, auth)
 src/lib/session.ts          Sesión (cookie) y negocio activo del usuario autenticado
 src/store/useStore.ts       Estado global Zustand + persistencia IndexedDB + cola offline
-src/app/(app)/              Rutas protegidas: / (caja), /inventario, /deudas, /contactos, /reportes
+src/app/(app)/              Rutas protegidas: / (caja), /inventario, /cuentas-por-cobrar,
+                             /cuentas-por-pagar, /contactos, /reportes
 src/app/login, /register    Autenticación
-src/components/             Componentes UI por módulo (caja, inventario, deudas, contactos, reportes, ui)
+src/components/             Componentes UI por módulo (caja, inventario, cuentas, contactos, reportes, ui)
 public/manifest.json, sw.js Configuración PWA
 ```
 

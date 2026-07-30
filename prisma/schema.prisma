@@ -273,6 +273,9 @@ model Debt {
   businessId      String
   contactId       String
   transactionId   String?    @unique
+  /// Motivo de la deuda (ej. "Mercancía a crédito"), mostrado en Cuentas por
+  /// Cobrar / Por Pagar. Copiado del concepto de la transacción al crearse.
+  description     String?
   totalAmount     Decimal
   remainingAmount Decimal
   status          DebtStatus @default(PENDING)

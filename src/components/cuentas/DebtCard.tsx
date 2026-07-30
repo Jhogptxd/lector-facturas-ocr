@@ -8,6 +8,7 @@ import { buildWhatsAppCollectionMessage } from "@/lib/whatsapp";
 
 export type DebtItem = {
   id: string;
+  description: string | null;
   totalAmount: number;
   remainingAmount: number;
   status: string;
@@ -29,11 +30,14 @@ export function DebtCard({
   debt,
   currency,
   businessName,
+  accentClassName = "text-foreground",
   onPay,
 }: {
   debt: DebtItem;
   currency: string;
   businessName: string;
+  /** Text color applied to the balance amount, e.g. green for receivables, red for payables. */
+  accentClassName?: string;
   onPay: () => void;
 }) {
   const status = STATUS_LABEL[debt.status] ?? STATUS_LABEL.PENDING;
@@ -53,9 +57,12 @@ export function DebtCard({
 
   return (
     <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-semibold">{debt.contact.name}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{debt.contact.name}</p>
+          {debt.description && (
+            <p className="truncate text-xs text-muted-foreground">{debt.description}</p>
+          )}
           <p className="text-xs text-muted-foreground">
             Registrada el {debt.createdDayName} {debt.createdDateLabel} a las {debt.createdTimeLabel}
           </p>
@@ -71,7 +78,7 @@ export function DebtCard({
       <div className="mt-2 flex items-end justify-between">
         <div>
           <p className="text-xs text-muted-foreground">Saldo pendiente</p>
-          <p className="text-lg font-bold">{formatCurrency(debt.remainingAmount, currency)}</p>
+          <p className={`text-lg font-bold ${accentClassName}`}>{formatCurrency(debt.remainingAmount, currency)}</p>
           {debt.remainingAmount < debt.totalAmount && (
             <p className="text-xs text-muted-foreground">de {formatCurrency(debt.totalAmount, currency)}</p>
           )}

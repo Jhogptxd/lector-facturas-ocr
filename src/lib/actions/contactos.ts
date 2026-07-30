@@ -54,7 +54,8 @@ export async function createContact(input: ContactInput) {
   const business = await getCurrentBusiness();
   const contact = await prisma.contact.create({ data: { ...input, businessId: business.id } });
   revalidatePath("/contactos");
-  revalidatePath("/deudas");
+  revalidatePath("/cuentas-por-cobrar");
+  revalidatePath("/cuentas-por-pagar");
   return contact;
 }
 

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import { useStore } from "@/store/useStore";
-import type { DebtItem } from "@/components/deudas/DebtCard";
+import type { DebtItem } from "@/components/cuentas/DebtCard";
 
 export function PaymentDialog({
   debt,

@@ -348,7 +348,8 @@ export async function confirmScan(input: ConfirmScanInput): Promise<ConfirmScanR
 
   revalidatePath("/documentos");
   revalidatePath("/");
-  revalidatePath("/deudas");
+  revalidatePath("/cuentas-por-cobrar");
+  revalidatePath("/cuentas-por-pagar");
   revalidatePath("/contactos");
   revalidatePath("/inventario");
   revalidatePath("/reportes");
