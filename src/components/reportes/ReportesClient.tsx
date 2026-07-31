@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
-import { FileSpreadsheet, FileText, TrendingUp } from "lucide-react";
+import { BarChart3, FileSpreadsheet, FileText, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store/useStore";
@@ -15,6 +16,23 @@ import {
   type ReportRange,
 } from "@/lib/actions/reportes";
 import { exportRowsToExcel, exportRowsToPdf } from "@/lib/export";
+
+/**
+ * The charting library is ~90 kB of the bundle — more than the rest of this
+ * page put together. Loading it on demand keeps the KPI cards, which are what
+ * the user came for, painting immediately on a phone.
+ */
+const ChartFallback = () => <div className="h-[210px] animate-pulse rounded-lg bg-muted/50" />;
+
+const IncomeExpenseChart = dynamic(
+  () => import("@/components/reportes/IncomeExpenseChart").then((m) => m.IncomeExpenseChart),
+  { ssr: false, loading: ChartFallback }
+);
+
+const TopProductsChart = dynamic(
+  () => import("@/components/reportes/TopProductsChart").then((m) => m.TopProductsChart),
+  { ssr: false, loading: ChartFallback }
+);
 
 type Metrics = Awaited<ReturnType<typeof getDashboardMetrics>>;
 
@@ -96,58 +114,78 @@ export function ReportesClient({ initialMetrics }: { initialMetrics: Metrics }) 
         {isPending && <span className="text-xs text-muted-foreground">Actualizando...</span>}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* Everything below reads from the same slice, so it dims as one block
+          while the new one loads — no skeleton flash, no layout jump. */}
+      <div
+        className={cn(
+          "flex flex-col gap-4 transition-opacity duration-200",
+          isPending && "opacity-60"
+        )}
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Utilidad bruta</p>
+              <p className="text-lg font-bold">{formatCurrency(metrics.grossProfit, currency)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Utilidad neta</p>
+              <p className="text-lg font-bold">{formatCurrency(metrics.netProfit, currency)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Ticket promedio</p>
+              <p className="text-lg font-bold">{formatCurrency(metrics.averageTicket, currency)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Margen promedio</p>
+              <p className="text-lg font-bold">{metrics.averageMarginPercent.toFixed(1)}%</p>
+            </CardContent>
+          </Card>
+        </div>
+
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Utilidad bruta</p>
-            <p className="text-lg font-bold">{formatCurrency(metrics.grossProfit, currency)}</p>
+            <div className="mb-1 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold">Ventas vs. gastos</p>
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Ingresos {formatCurrency(metrics.totalIncome, currency)} · Gastos{" "}
+              {formatCurrency(metrics.totalExpense, currency)}
+            </p>
+            <IncomeExpenseChart
+              series={metrics.series}
+              granularity={metrics.granularity}
+              currency={currency}
+            />
           </CardContent>
         </Card>
+
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Utilidad neta</p>
-            <p className="text-lg font-bold">{formatCurrency(metrics.netProfit, currency)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Ticket promedio</p>
-            <p className="text-lg font-bold">{formatCurrency(metrics.averageTicket, currency)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Margen promedio</p>
-            <p className="text-lg font-bold">{metrics.averageMarginPercent.toFixed(1)}%</p>
+            <div className="mb-1 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              <p className="text-sm font-semibold">Top 5 productos más vendidos</p>
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Participación sobre las ventas de productos del período.
+            </p>
+            <TopProductsChart
+              topProducts={metrics.topProducts}
+              otherRevenue={metrics.otherRevenue}
+              otherCount={metrics.otherCount}
+              productRevenue={metrics.productRevenue}
+              currency={currency}
+            />
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardContent className="p-4">
-          <div className="mb-2 flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-primary" />
-            <p className="text-sm font-semibold">Top 5 productos más vendidos</p>
-          </div>
-          {metrics.topProducts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin ventas registradas en este período.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {metrics.topProducts.map((p, index) => (
-                <div key={p.productId} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                      {index + 1}
-                    </span>
-                    {p.name}
-                  </span>
-                  <span className="font-medium">{formatCurrency(p.revenue, currency)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       <div className="space-y-2">
         <p className="text-sm font-semibold text-muted-foreground">Exportar reportes</p>

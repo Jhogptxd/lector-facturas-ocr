@@ -72,6 +72,52 @@
   }
 }
 
+/*
+ * Chart palette.
+ *
+ * Kept apart from the UI tokens above because these carry data, not decoration:
+ * each value was checked with the data-viz validator (lightness band, chroma
+ * floor, protan/deutan separation, contrast on the card surface) against the
+ * surface it actually renders on — #ffffff in light, #151e1b in dark. The dark
+ * column is the same hues re-stepped for the dark surface, not an auto-flip.
+ *
+ * Ventas green + Gastos blue: the obvious green/orange pairing collapses to
+ * ΔE 2.0 under protanopia, so blue takes the expense slot. The pie deliberately
+ * avoids both of those hues so a colour never means two things on one screen.
+ */
+@layer base {
+  :root {
+    --chart-income: #189044;
+    --chart-expense: #2a78d6;
+
+    --chart-cat-1: #eb6834;
+    --chart-cat-2: #1baf7a;
+    --chart-cat-3: #eda100;
+    --chart-cat-4: #e87ba4;
+    --chart-cat-5: #4a3aa7;
+    /* The tail of the distribution is context, not identity — hence gray. */
+    --chart-other: #898781;
+
+    --chart-grid: #e1e0d9;
+    --chart-axis: #898781;
+  }
+
+  .dark {
+    --chart-income: #29a85c;
+    --chart-expense: #3987e5;
+
+    --chart-cat-1: #d95926;
+    --chart-cat-2: #199e70;
+    --chart-cat-3: #c98500;
+    --chart-cat-4: #d55181;
+    --chart-cat-5: #9085e9;
+    --chart-other: #898781;
+
+    --chart-grid: #2c2c2a;
+    --chart-axis: #898781;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

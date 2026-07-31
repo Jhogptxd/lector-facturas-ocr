@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentBusiness } from "@/lib/session";
+import { buildSeries } from "@/lib/reportes/series";
 
 export type ReportRange = { from?: string; to?: string };
 
@@ -43,10 +44,21 @@ export async function getDashboardMetrics(range?: ReportRange) {
     current.revenue += Number(item.unitPrice) * Number(item.quantity);
     productTotals.set(key, current);
   }
-  const topProducts = Array.from(productTotals.entries())
+  const rankedProducts = Array.from(productTotals.entries())
     .map(([productId, data]) => ({ productId, ...data }))
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
+    .sort((a, b) => b.revenue - a.revenue);
+
+  const topProducts = rankedProducts.slice(0, 5).map((p) => ({
+    ...p,
+    // Share of product revenue, not of total income: income without sale items
+    // (a confirmed sale note, say) has no product to attribute it to, and
+    // folding it in would make every slice understate its real weight.
+    share: productRevenue > 0 ? (p.revenue / productRevenue) * 100 : 0,
+  }));
+
+  const otherRevenue = rankedProducts.slice(5).reduce((sum, p) => sum + p.revenue, 0);
+
+  const { points: series, granularity } = buildSeries(transactions, from, to);
 
   return {
     range: { from: from.toISOString(), to: to.toISOString() },
@@ -58,6 +70,13 @@ export async function getDashboardMetrics(range?: ReportRange) {
     averageMarginPercent,
     salesCount: incomeTransactions.length,
     topProducts,
+    /** Revenue from products outside the top 5 — the pie's "Otros" slice. */
+    otherRevenue,
+    otherCount: Math.max(0, rankedProducts.length - 5),
+    /** Denominator behind `share`. */
+    productRevenue,
+    series,
+    granularity,
   };
 }
 

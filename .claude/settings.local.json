@@ -44,7 +44,8 @@
       "Bash(npx eslint *)",
       "Bash(node --input-type=module -e ' *)",
       "Bash(mv google-creds.json.json google-credentials.json)",
-      "Bash(node -e \"console.log\\('valida:', require\\('./google-credentials.json'\\).type\\)\")"
+      "Bash(node -e \"console.log\\('valida:', require\\('./google-credentials.json'\\).type\\)\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\('react',p.dependencies.react,'| next',p.dependencies.next\\);console.log\\('deps:',Object.keys\\(p.dependencies\\).join\\(', '\\)\\)\")"
     ]
   }
 }
