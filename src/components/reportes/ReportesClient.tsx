@@ -11,11 +11,12 @@ import { formatCurrency, cn } from "@/lib/utils";
 import {
   getDashboardMetrics,
   getSalesReportRows,
-  getCashReportRows,
+  getExpenseReportRows,
+  getDebtsReportRows,
   getInventoryReportRows,
   type ReportRange,
 } from "@/lib/actions/reportes";
-import { exportRowsToExcel, exportRowsToPdf } from "@/lib/export";
+import { exportRowsToExcel, exportRowsToPdf, exportFinancialExcel, exportFinancialPdf } from "@/lib/export";
 
 /**
  * The charting library is ~90 kB of the bundle — more than the rest of this
@@ -42,17 +43,32 @@ const PRESETS: { label: string; days: number | null }[] = [
   { label: "Todo", days: null },
 ];
 
-export function ReportesClient({ initialMetrics }: { initialMetrics: Metrics }) {
+export function ReportesClient({
+  initialMetrics,
+  businessName,
+}: {
+  initialMetrics: Metrics;
+  businessName: string;
+}) {
   const currency = useStore((s) => s.currency);
   const [metrics, setMetrics] = useState(initialMetrics);
   const [activePreset, setActivePreset] = useState(30);
   const [isPending, startTransition] = useTransition();
+  const [isExporting, setIsExporting] = useState(false);
 
   function buildRange(days: number | null): ReportRange {
     if (days === null) return { from: "2000-01-01" };
     const to = new Date();
     const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
     return { from: from.toISOString(), to: to.toISOString() };
+  }
+
+  function buildRangeLabel(days: number | null) {
+    if (days === null) return "Todo el historial";
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return `${fmt(from)} - ${fmt(to)}`;
   }
 
   function handlePreset(days: number | null) {
@@ -63,32 +79,71 @@ export function ReportesClient({ initialMetrics }: { initialMetrics: Metrics }) 
     });
   }
 
-  async function handleExportExcel(kind: "ventas" | "caja" | "inventario") {
+  async function handleExportFinancial(format: "excel" | "pdf") {
+    setIsExporting(true);
     try {
-      const range = buildRange(activePreset === -1 ? null : activePreset);
-      const rows =
-        kind === "ventas"
-          ? await getSalesReportRows(range)
-          : kind === "caja"
-          ? await getCashReportRows(range)
-          : await getInventoryReportRows();
-      exportRowsToExcel(rows, `reporte-${kind}`);
+      const days = activePreset === -1 ? null : activePreset;
+      const range = buildRange(days);
+      const [ventas, gastos, deudas] = await Promise.all([
+        getSalesReportRows(range),
+        getExpenseReportRows(range),
+        getDebtsReportRows(range),
+      ]);
+
+      const totalVentas = ventas.reduce((sum, r) => sum + r.Monto, 0);
+      const totalGastos = gastos.reduce((sum, r) => sum + r.Monto, 0);
+      const totalPorCobrar = deudas
+        .filter((r) => r.Tipo === "Por cobrar")
+        .reduce((sum, r) => sum + r["Saldo pendiente"], 0);
+      const totalPorPagar = deudas
+        .filter((r) => r.Tipo === "Por pagar")
+        .reduce((sum, r) => sum + r["Saldo pendiente"], 0);
+
+      const summary = [
+        { label: "Total ventas", value: formatCurrency(totalVentas, currency) },
+        { label: "Total gastos", value: formatCurrency(totalGastos, currency) },
+        { label: "Utilidad neta", value: formatCurrency(totalVentas - totalGastos, currency) },
+        { label: "Por cobrar pendiente", value: formatCurrency(totalPorCobrar, currency) },
+        { label: "Por pagar pendiente", value: formatCurrency(totalPorPagar, currency) },
+      ];
+
+      const sections = [
+        { title: "Ventas", rows: ventas },
+        { title: "Gastos", rows: gastos },
+        { title: "Deudas", rows: deudas },
+      ];
+
+      if (format === "excel") {
+        exportFinancialExcel(sections, "reporte-financiero");
+      } else {
+        exportFinancialPdf({
+          businessName,
+          rangeLabel: buildRangeLabel(days),
+          summary,
+          sections,
+          filename: "reporte-financiero",
+        });
+      }
+    } catch {
+      toast.error(`No se pudo generar el ${format === "excel" ? "Excel" : "PDF"}.`);
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function handleExportInventoryExcel() {
+    try {
+      const rows = await getInventoryReportRows();
+      exportRowsToExcel(rows, "reporte-inventario");
     } catch {
       toast.error("No se pudo generar el archivo Excel.");
     }
   }
 
-  async function handleExportPdf(kind: "ventas" | "caja" | "inventario") {
+  async function handleExportInventoryPdf() {
     try {
-      const range = buildRange(activePreset === -1 ? null : activePreset);
-      const rows =
-        kind === "ventas"
-          ? await getSalesReportRows(range)
-          : kind === "caja"
-          ? await getCashReportRows(range)
-          : await getInventoryReportRows();
-      const titles = { ventas: "Reporte de Ventas", caja: "Reporte de Caja", inventario: "Reporte de Inventario" };
-      exportRowsToPdf(titles[kind], rows, `reporte-${kind}`);
+      const rows = await getInventoryReportRows();
+      exportRowsToPdf("Reporte de Inventario", rows, "reporte-inventario");
     } catch {
       toast.error("No se pudo generar el PDF.");
     }
@@ -189,19 +244,43 @@ export function ReportesClient({ initialMetrics }: { initialMetrics: Metrics }) 
 
       <div className="space-y-2">
         <p className="text-sm font-semibold text-muted-foreground">Exportar reportes</p>
-        {(["ventas", "caja", "inventario"] as const).map((kind) => (
-          <div key={kind} className="flex items-center justify-between rounded-xl border border-border bg-card p-3">
-            <span className="text-sm font-medium capitalize">{kind}</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => handleExportExcel(kind)}>
-                <FileSpreadsheet className="mr-1 h-3.5 w-3.5" /> Excel
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => handleExportPdf(kind)}>
-                <FileText className="mr-1 h-3.5 w-3.5" /> PDF
-              </Button>
-            </div>
+
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm font-semibold">Reporte financiero</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Ventas, gastos y deudas del período seleccionado ({buildRangeLabel(activePreset === -1 ? null : activePreset)})
+          </p>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              variant="outline"
+              disabled={isExporting}
+              onClick={() => handleExportFinancial("excel")}
+            >
+              <FileSpreadsheet className="mr-1.5 h-4 w-4" /> Excel
+            </Button>
+            <Button
+              className="flex-1"
+              variant="outline"
+              disabled={isExporting}
+              onClick={() => handleExportFinancial("pdf")}
+            >
+              <FileText className="mr-1.5 h-4 w-4" /> PDF
+            </Button>
           </div>
-        ))}
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-border bg-card p-3">
+          <span className="text-sm font-medium">Inventario</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleExportInventoryExcel}>
+              <FileSpreadsheet className="mr-1 h-3.5 w-3.5" /> Excel
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleExportInventoryPdf}>
+              <FileText className="mr-1 h-3.5 w-3.5" /> PDF
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

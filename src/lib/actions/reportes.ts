@@ -118,6 +118,53 @@ export async function getCashReportRows(range?: ReportRange) {
   }));
 }
 
+export async function getExpenseReportRows(range?: ReportRange) {
+  const business = await getCurrentBusiness();
+  const { from, to } = resolveRange(range);
+
+  const transactions = await prisma.transaction.findMany({
+    where: { businessId: business.id, type: "EXPENSE", createdAt: { gte: from, lte: to } },
+    include: { contact: true, category: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return transactions.map((t) => ({
+    Fecha: t.createdAt.toLocaleString("es-CO"),
+    Concepto: t.concept,
+    Monto: Number(t.amount),
+    "Método de pago": t.paymentMethod,
+    Categoría: t.category?.name ?? "",
+    Contacto: t.contact?.name ?? "",
+  }));
+}
+
+export async function getDebtsReportRows(range?: ReportRange) {
+  const business = await getCurrentBusiness();
+  const { from, to } = resolveRange(range);
+
+  const debts = await prisma.debt.findMany({
+    where: { businessId: business.id, createdAt: { gte: from, lte: to } },
+    include: { contact: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const STATUS_LABEL: Record<string, string> = {
+    PENDING: "Pendiente",
+    PARTIAL: "Abono parcial",
+    PAID: "Pagado",
+  };
+
+  return debts.map((d) => ({
+    Fecha: d.createdAt.toLocaleString("es-CO"),
+    Tipo: d.contact.type === "SUPPLIER" ? "Por pagar" : "Por cobrar",
+    Contacto: d.contact.name,
+    Descripción: d.description ?? "",
+    "Monto total": Number(d.totalAmount),
+    "Saldo pendiente": Number(d.remainingAmount),
+    Estado: STATUS_LABEL[d.status] ?? d.status,
+  }));
+}
+
 export async function getInventoryReportRows() {
   const business = await getCurrentBusiness();
   const products = await prisma.product.findMany({
