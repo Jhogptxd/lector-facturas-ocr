@@ -766,10 +766,10 @@ export function DocumentScanClient({
           <div>
             <p className="font-semibold">Lectura automática no configurada</p>
             <p>
-              Falta <code className="font-mono">GOOGLE_APPLICATION_CREDENTIALS</code> en tu archivo{" "}
-              <code className="font-mono">.env</code>, o la ruta no existe. Apúntala al JSON de tu
-              cuenta de servicio de Google Cloud y reinicia el servidor. Mientras tanto puedes
-              registrar el documento a mano desde Caja.
+              Falta <code className="font-mono">GEMINI_API_KEY</code> en tu archivo{" "}
+              <code className="font-mono">.env</code>. Crea una clave gratuita en Google AI Studio,
+              pégala ahí y reinicia el servidor. Mientras tanto puedes registrar el documento a mano
+              desde Caja.
             </p>
           </div>
         </div>
@@ -781,9 +781,9 @@ export function DocumentScanClient({
           <div>
             <p className="font-semibold">Modo de prueba (datos simulados)</p>
             <p>
-              Sin <code className="font-mono">GOOGLE_APPLICATION_CREDENTIALS</code> no se lee la
-              foto: cualquier imagen devuelve la misma factura de ejemplo. Sirve para probar el
-              flujo, pero <strong>lo que confirmes se guarda de verdad</strong> en Caja e inventario.
+              Sin <code className="font-mono">GEMINI_API_KEY</code> no se lee la foto: cualquier
+              imagen devuelve la misma factura de ejemplo. Sirve para probar el flujo, pero{" "}
+              <strong>lo que confirmes se guarda de verdad</strong> en Caja e inventario.
             </p>
           </div>
         </div>

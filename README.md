@@ -9,7 +9,7 @@ CRM/POS para asesores comerciales: ventas por catálogo de productos, gestión d
 - **Base de datos**: PostgreSQL vía Prisma ORM.
 - **Estado y offline-first**: Zustand con persistencia en IndexedDB (`src/store`), cola de ventas pendientes que se sincroniza automáticamente al recuperar conexión.
 - **PWA**: manifest + service worker (`public/sw.js`) con estrategia network-first para navegación y cache-first para estáticos.
-- **Lectura de documentos (OCR)**: Google Cloud Vision (`documentTextDetection`) más un parser propio por heurísticas/regex (`src/lib/vision`).
+- **Lectura de documentos**: API de Gemini vía el SDK oficial `@google/genai`, con salida estructurada obligatoria (`src/lib/vision`).
 
 ## Lectura automática de facturas y notas de venta
 
@@ -18,8 +18,8 @@ En `/documentos` (enlace desde Caja) el usuario elige el tipo de documento, toma
 Flujo:
 
 1. **Captura** — el tipo de documento es obligatorio antes de procesar. La imagen se reescala en el navegador a 2576 px de borde largo (suficiente para el OCR y por debajo del límite de 8 MB por petición) y se recodifica a JPEG, lo que también normaliza formatos como HEIC de iPhone.
-2. **Extracción** — `extractScan` envía la imagen a Cloud Vision, que devuelve el texto reconocido. `parseInvoiceText` (en `src/lib/vision/parseInvoice.ts`, puro y testeable sin credenciales) lo convierte a `ParsedInvoice`. La respuesta se guarda como `DocumentScan` en estado `DRAFT`.
-3. **Validación humana** — todos los campos y las líneas de detalle son editables. Se muestra una cobertura de lectura (`parseCoverage` cuenta cuántos campos clave se reconocieron, no es una confianza del modelo) y se advierte si la suma del detalle no cuadra con el total impreso.
+2. **Extracción** — `extractScan` envía la imagen a Gemini con un `responseSchema`, que obliga al modelo a devolver exactamente la forma de `ParsedInvoice`: la API no le deja contestar con prosa ni envolver el JSON en un bloque de código. La respuesta se valida con Zod y se guarda como `DocumentScan` en estado `DRAFT`.
+3. **Validación humana** — todos los campos y las líneas de detalle son editables. Se muestra una cobertura de lectura (`parseCoverage` cuenta cuántos campos clave llegaron llenos, no es una confianza del modelo) y se advierte si la suma del detalle no cuadra con el total impreso.
 4. **Confirmación** — `confirmScan` escribe en las tablas canónicas: una `Transaction` (`INCOME` para nota de venta, `EXPENSE` para factura de proveedor), el `Contact` de la contraparte (reutilizado si ya existe) y una `Debt` si el pago es a crédito.
 
 ### Vinculación con inventario
@@ -37,29 +37,31 @@ Los vínculos se guardan en el momento de elegirlos, no al confirmar. Esto no es
 - **No hay tablas `ventas` / `compras_proveedores` separadas.** Los documentos confirmados entran a `Transaction`, que es lo que ya alimentan Caja, Reportes y Fiados; una tabla paralela dejaría los escaneos fuera de esos cálculos. Para distinguirlos se consulta `Transaction.type` junto a `DocumentScan.docType`.
 - **Las líneas no crean `SaleItem`.** Se guardan en `DocumentScanItem`, que admite descripciones libres y un `productId` opcional. Crear `SaleItem` haría que un documento con solo algunas líneas vinculadas distorsionara los márgenes de Reportes.
 - **Los borradores se pueden retomar.** Si se sale de la página a medio revisar, el borrador aparece en la lista como «Borrador · continuar» y se recarga —con sus vínculos— sin volver a pagar la extracción.
-- **La imagen se borra al resolver el borrador.** Se archiva en `.data/scans/` (fuera de `public/`) mientras el borrador está pendiente y se elimina al confirmar o descartar, así que el disco no crece. Contrapartida: después de confirmar ya no se puede re-verificar una línea contra la foto original; quedan el JSON extraído y las líneas.
-- Mientras el borrador existe, la imagen se sirve solo por `/api/scans/[id]/image`, que valida sesión y pertenencia al negocio.
+- **El comprobante se guarda comprimido, dentro de la fila.** El navegador genera dos copias de la foto: una grande, que va al modelo y se descarta, y un respaldo de ~150 KB que se archiva como data URI en `DocumentScan.receiptDataUrl`. Va en la base y no en disco porque en Vercel el sistema de archivos es efímero: un archivo escrito ahí se pierde en el siguiente despliegue. El respaldo sobrevive a la confirmación, así que una línea siempre se puede re-verificar contra la foto.
+- La imagen se sirve solo por `/api/scans/[id]/image`, que valida sesión y pertenencia al negocio. Nunca viaja junto a la lista de movimientos: son ~200 KB de Base64 por fila y Caja carga hasta 200.
+- Si el respaldo pasa de 400 KB, el servidor prefiere no guardarlo antes que engordar la tabla, y el escáner lo avisa.
 
-### Configuración del OCR
+### Configuración de la lectura
 
 | Variable | Descripción |
 | --- | --- |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Ruta al JSON de la cuenta de servicio de Google Cloud. Sin ella, en producción `/documentos` muestra un aviso y desactiva el procesado; en desarrollo entra en modo de prueba (abajo). |
+| `GEMINI_API_KEY` | Clave de la API de Gemini, gratuita y sin tarjeta desde [Google AI Studio](https://aistudio.google.com/apikey). Sin ella, en producción `/documentos` muestra un aviso y desactiva el procesado; en desarrollo entra en modo de prueba (abajo). |
+| `GEMINI_MODEL` | Modelo a usar. Opcional: por defecto `gemini-2.5-flash`. |
 | `VISION_MOCK` | `"off"` (también `"false"`, `"0"`, `"no"`) desactiva el modo de prueba en desarrollo, para ver el error real de credenciales. |
 
-> La ruta se valida con `existsSync()` desde la raíz del proyecto. Si apunta a un archivo que no existe, la app **no** avisa con un error: cae en modo de prueba. Si ves el banner azul teniendo credenciales, lo primero que hay que revisar es el nombre del archivo (en Windows es fácil terminar con `.json.json`).
+> No pongas `gemini-1.5-flash`: la serie 1.5 quedó fuera de alcance para los proyectos nuevos de la API, así que una clave recién creada responde 404 al pedirlo.
 
-La capa gratuita de Cloud Vision cubre 1000 páginas al mes.
+A diferencia de Cloud Vision, la API de Gemini tiene capa gratuita real: no hace falta habilitar facturación ni registrar una tarjeta.
 
-### Modo de prueba (sin cuenta de Google)
+### Modo de prueba (sin clave)
 
-En desarrollo, si `GOOGLE_APPLICATION_CREDENTIALS` está vacía, `extractInvoiceFields` no llama a la API: registra `[DEV] Credenciales de Google no encontradas...`, espera 2 s para emular la latencia y devuelve una factura simulada de un proveedor de insumos de panadería (harina al 0%, levadura y manteca al 15%, con los subtotales, el IVA y el total cuadrados). Así se puede probar el borrador, la vinculación con inventario, el alta rápida de productos y el registro en Caja sin credenciales. `/documentos` lo anuncia con un banner azul.
+En desarrollo, si `GEMINI_API_KEY` está vacía, `extractInvoiceFields` no llama a la API: registra `[DEV] Falta GEMINI_API_KEY...`, espera 2 s para emular la latencia y devuelve una factura simulada de un proveedor de insumos de panadería (harina al 0%, levadura y manteca al 15%, con los subtotales, el IVA y el total cuadrados). Así se puede probar el borrador, la vinculación con inventario, el alta rápida de productos y el registro en Caja sin darse de alta en ningún lado. `/documentos` lo anuncia con un banner azul.
 
-`getVisionMode()` nunca devuelve `mock` cuando `NODE_ENV === "production"`: un despliegue al que se le olvide la credencial debe fallar visiblemente, no contabilizar una factura falsa. Ojo: la lectura es simulada, pero **lo que se confirma se guarda de verdad** (Transaction, contacto y stock).
+`getVisionMode()` nunca devuelve `mock` cuando `NODE_ENV === "production"`: un despliegue al que se le olvide la clave debe fallar visiblemente, no contabilizar una factura falsa. Ojo: la lectura es simulada, pero **lo que se confirma se guarda de verdad** (Transaction, contacto y stock).
 
-**Límites del parseo por regex.** Los encabezados y totales son robustos porque el documento los etiqueta ("RUC", "IVA", "VALOR TOTAL"). El detalle de ítems es el punto débil: el OCR entrega texto plano sin estructura de tabla, así que el parser asume el orden `cantidad | descripción | precio unitario | total` y descarta una fila si su aritmética no cuadra (±2%), lo que evita confundir direcciones o el bloque de totales con productos. Una factura con otro orden de columnas devolverá `items: []` y el resto de campos sí llenos.
+**Qué esperar del modelo.** Al leer la imagen directamente, y no un volcado de texto plano, el detalle de ítems ya no depende de adivinar el orden de las columnas: Gemini reconoce la tabla. A cambio, un modelo puede equivocarse de formas que un parser por regex no: leer mal un dígito o rellenar un campo que no está impreso. Por eso el prompt insiste en devolver `null` antes que inventar, la temperatura es 0, y la pantalla de validación humana sigue siendo obligatoria.
 
-Dos campos quedan vacíos por naturaleza del OCR: el **receptor** (el texto plano no permite distinguir con fiabilidad las dos partes, así que en una nota de venta hay que escribir el cliente a mano) y el **número de autorización**.
+Dos campos quedan vacíos a propósito: el **receptor** (una foto no permite distinguir con fiabilidad las dos partes, así que en una nota de venta hay que escribir el cliente a mano) y el **número de autorización**.
 
 ## Requisitos previos
 
@@ -80,13 +82,13 @@ Dos campos quedan vacíos por naturaleza del OCR: el **receptor** (el texto plan
    cp .env.example .env
    ```
 
-3. Para habilitar la lectura de documentos por foto, crea una cuenta de servicio en Google Cloud con la API de Cloud Vision activada y el rol *Cloud Vision AI Service Agent*, descarga su clave JSON a la raíz del proyecto y apunta `.env` a ella:
+3. Para habilitar la lectura de documentos por foto, crea una clave gratuita en [Google AI Studio](https://aistudio.google.com/apikey) —no pide tarjeta ni habilitar facturación— y pégala en `.env`:
 
    ```
-   GOOGLE_APPLICATION_CREDENTIALS="./google-credentials.json"
+   GEMINI_API_KEY="AIza..."
    ```
 
-   El archivo está en `.gitignore` (`google-credentials*.json`), no lo subas al repositorio. Sin esta credencial el resto de la app funciona con normalidad; solo `/documentos` mostrará un aviso pidiendo configurarla.
+   `.env` está en `.gitignore`, no lo subas al repositorio. Sin esta clave el resto de la app funciona con normalidad; solo `/documentos` mostrará un aviso pidiendo configurarla.
 
 4. Aplica el esquema y genera el cliente de Prisma:
 

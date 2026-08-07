@@ -1,76 +1,80 @@
 import "server-only";
 
-import { existsSync } from "fs";
-import { ImageAnnotatorClient } from "@google-cloud/vision";
+import { ApiError, GoogleGenAI, Type } from "@google/genai";
 import { APP_TIME_ZONE } from "@/lib/datetime";
-import { parseInvoiceText, type ParsedInvoice } from "@/lib/vision/parseInvoice";
+import { ParsedInvoiceSchema, normalizeDate, type ParsedInvoice } from "@/lib/vision/invoice";
 import type { VisionMode } from "@/lib/vision/schema";
 
 export type { VisionMode };
 
-// The parsing helpers live in `parseInvoice.ts` (pure, unit-testable, no
-// `server-only` guard) and are re-exported here so callers have a single entry
-// point for the vision pipeline.
+// El contrato de la factura vive en `invoice.ts` (puro, sin `server-only` ni
+// dependencia del proveedor) y se reexporta aquí para que quien llame tenga una
+// sola puerta de entrada a la lectura de documentos.
 export {
-  parseInvoiceText,
-  parseAmount,
   normalizeDate,
   parseCoverage,
   ParsedInvoiceSchema,
   type ParsedInvoice,
   type InvoiceItem,
-} from "@/lib/vision/parseInvoice";
+} from "@/lib/vision/invoice";
 
-/** Media types accepted for upload. Cloud Vision sniffs the format itself. */
-export const ACCEPTED_IMAGE_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-] as const;
+/**
+ * Formatos que acepta la subida. Es la intersección de lo que Gemini entiende
+ * con lo que un `<img>` sabe pintar después: el respaldo del comprobante se
+ * guarda con este mismo tipo y el dueño tiene que poder verlo desde Caja.
+ *
+ * GIF salió al migrar desde Cloud Vision —Gemini no lo admite—; en la práctica
+ * no cambia nada, porque el navegador reencoda toda foto a JPEG antes de subir.
+ */
+export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export type AcceptedImageType = (typeof ACCEPTED_IMAGE_TYPES)[number];
 
-/** Cloud Vision rejects payloads over 20 MB; stay well under. */
+/**
+ * Una petición con la imagen incrustada no puede pasar de 20 MB; este tope deja
+ * margen de sobra, y de todos modos el navegador sube ~1 MB tras comprimir.
+ */
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Modelo por defecto. Se puede fijar otro con `GEMINI_MODEL` sin tocar código.
+ *
+ * No es `gemini-1.5-flash` a propósito: la serie 1.5 quedó fuera de alcance
+ * para los proyectos nuevos de la API de Gemini, así que una clave recién
+ * creada responde 404 al pedirlo.
+ */
+const DEFAULT_MODEL = "gemini-2.5-flash";
+
+function getModel() {
+  return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+}
+
 // ---------------------------------------------------------------------------
-// Credentials
+// Credenciales
 // ---------------------------------------------------------------------------
 
-/**
- * Returns true when credentials are available via either:
- *  - `GOOGLE_CREDENTIALS_JSON` env var (JSON string, used on Vercel)
- *  - `GOOGLE_APPLICATION_CREDENTIALS` file path (used locally)
- */
+function getApiKey() {
+  return process.env.GEMINI_API_KEY?.trim() || "";
+}
+
+/** True cuando hay una clave de la API de Gemini configurada. */
 export function isVisionConfigured() {
-  const credentialsJson = process.env.GOOGLE_CREDENTIALS_JSON?.trim();
-  if (credentialsJson) {
-    try {
-      JSON.parse(credentialsJson);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
-  if (!credentialsPath) return false;
-  return existsSync(credentialsPath);
+  return getApiKey().length > 0;
 }
 
 /**
- * - `google` → real Cloud Vision call.
- * - `mock`   → no credentials, but we're outside production: return canned data
- *              so the rest of the flow (draft, linking, stock, Transaction) can
- *              be exercised without a Google account.
- * - `off`    → no credentials in production, or the mock disabled explicitly.
+ * - `gemini` → llamada real a la API.
+ * - `mock`   → sin clave, pero fuera de producción: devuelve datos de ejemplo
+ *              para poder ejercitar el resto del flujo (borrador, vínculos,
+ *              stock, Transaction) sin darse de alta en ningún lado.
+ * - `off`    → sin clave en producción, o mock desactivado explícitamente.
  *
- * The production guard is deliberate. Without it, a deploy that forgets the
- * credential would silently book a fake $667 invoice into the real accounts
- * instead of showing an error.
+ * El corte en producción es deliberado. Sin él, un despliegue que olvidara la
+ * clave registraría en silencio una factura falsa de $667 en las cuentas
+ * reales en vez de mostrar un error.
  */
 export function getVisionMode(): VisionMode {
-  if (isVisionConfigured()) return "google";
+  if (isVisionConfigured()) return "gemini";
   if (process.env.NODE_ENV === "production") return "off";
   // Accept the spellings someone would reach for to turn a flag off, not just
   // the documented "off" — a `VISION_MOCK=false` that silently kept the mock
@@ -84,21 +88,12 @@ export function getVisionMode(): VisionMode {
 const MOCK_DISABLED_VALUES = new Set(["off", "false", "0", "no", "disabled"]);
 
 export const MISSING_CREDENTIALS_MESSAGE =
-  "La lectura automática no está configurada: falta GOOGLE_APPLICATION_CREDENTIALS o la ruta no existe. Descarga el JSON de la cuenta de servicio de Google Cloud, apunta la variable a ese archivo en tu .env y reinicia el servidor.";
+  "La lectura automática no está configurada: falta GEMINI_API_KEY. Crea una clave gratuita en Google AI Studio (aistudio.google.com/apikey), añádela a tu .env y reinicia el servidor.";
 
-let cachedClient: ImageAnnotatorClient | null = null;
+let cachedClient: GoogleGenAI | null = null;
 
-function getClient(): ImageAnnotatorClient {
-  if (!cachedClient) {
-    const credentialsJson = process.env.GOOGLE_CREDENTIALS_JSON?.trim();
-    if (credentialsJson) {
-      // Vercel: credentials supplied as a JSON string in env var.
-      cachedClient = new ImageAnnotatorClient({ credentials: JSON.parse(credentialsJson) });
-    } else {
-      // Local: credentials file pointed to by GOOGLE_APPLICATION_CREDENTIALS.
-      cachedClient = new ImageAnnotatorClient();
-    }
-  }
+function getClient(): GoogleGenAI {
+  if (!cachedClient) cachedClient = new GoogleGenAI({ apiKey: getApiKey() });
   return cachedClient;
 }
 
@@ -115,6 +110,7 @@ export type ExtractionFailure = {
 export type ExtractionSuccess = {
   ok: true;
   parsed: ParsedInvoice;
+  /** El JSON tal cual lo devolvió el modelo, para poder auditar la lectura. */
   raw: string;
   /** True when the data is canned, not read from a real photo. */
   mock?: boolean;
@@ -160,7 +156,7 @@ function todayIso() {
   }).format(new Date());
 }
 
-function buildMockInvoice(): { parsed: ParsedInvoice; raw: string } {
+function buildMockInvoice(): ParsedInvoice {
   const items = MOCK_ITEMS.map((item) => ({
     descripcion: item.descripcion,
     cantidad: item.cantidad,
@@ -188,7 +184,7 @@ function buildMockInvoice(): { parsed: ParsedInvoice; raw: string } {
     );
   }
 
-  const parsed: ParsedInvoice = {
+  return {
     ruc_emisor: "1790012345001",
     razon_social_emisor: "MOLINOS Y LEVADURAS DEL ECUADOR S.A.",
     numero_comprobante: "001-001-000123456",
@@ -199,45 +195,95 @@ function buildMockInvoice(): { parsed: ParsedInvoice; raw: string } {
     total,
     items,
   };
-
-  // A plausible OCR dump, kept in sync with `parsed`, so `raw` isn't empty in
-  // mock mode. Handy for checking the parser against this same text:
-  //   parseInvoiceText(raw)  ≈  parsed
-  const raw = [
-    "MOLINOS Y LEVADURAS DEL ECUADOR S.A.",
-    "RUC: 1790012345001",
-    "FACTURA",
-    `No. ${parsed.numero_comprobante}`,
-    `FECHA DE EMISION: ${todayIso().split("-").reverse().join("/")}`,
-    "",
-    "CANT  DESCRIPCION                          P.UNIT    TOTAL",
-    ...items.map(
-      (item) =>
-        `${item.cantidad}  ${item.descripcion}  ${item.precio_unitario.toFixed(2)}  ${item.precio_total.toFixed(2)}`
-    ),
-    "",
-    `SUBTOTAL 0%        ${subtotal0.toFixed(2)}`,
-    `SUBTOTAL 15%       ${subtotal12.toFixed(2)}`,
-    `IVA 15%            ${iva.toFixed(2)}`,
-    `VALOR TOTAL        ${total.toFixed(2)}`,
-  ].join("\n");
-
-  return { parsed, raw };
 }
 
 // ---------------------------------------------------------------------------
-// OCR
+// Extracción
 // ---------------------------------------------------------------------------
 
 /**
- * Runs Cloud Vision `documentTextDetection` and parses the recognised text.
+ * Esquema que se le impone a la respuesta. No es una sugerencia del prompt: la
+ * API obliga al modelo a emitir exactamente esta forma, así que no hay manera
+ * de que conteste con explicaciones, disculpas ni un bloque ```json alrededor.
  *
- * Returns a discriminated result rather than throwing for the outcomes a user
- * can act on (bad photo, missing credentials), so the UI can show something
- * useful instead of a generic failure.
+ * Todos los campos van en `required` —incluidos los que pueden ser null— porque
+ * `ParsedInvoiceSchema` espera la clave presente: una clave ausente es
+ * `undefined` y no pasa la validación.
+ */
+const NUMBER_OR_NULL = { type: Type.NUMBER, nullable: true } as const;
+const STRING_OR_NULL = { type: Type.STRING, nullable: true } as const;
+
+const RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    ruc_emisor: { ...STRING_OR_NULL, description: "RUC o cédula del emisor, solo dígitos." },
+    razon_social_emisor: {
+      ...STRING_OR_NULL,
+      description: "Nombre o razón social de quien emite el documento.",
+    },
+    numero_comprobante: {
+      ...STRING_OR_NULL,
+      description: "Número del comprobante, con su formato impreso (ej. 001-001-000123456).",
+    },
+    fecha_emision: { ...STRING_OR_NULL, description: "Fecha de emisión en formato YYYY-MM-DD." },
+    subtotal_12: {
+      ...NUMBER_OR_NULL,
+      description: "Suma de las líneas gravadas con IVA (12% histórico, 15% actual).",
+    },
+    subtotal_0: { ...NUMBER_OR_NULL, description: "Suma de las líneas con tarifa 0%." },
+    iva: { ...NUMBER_OR_NULL, description: "Monto del IVA." },
+    total: { ...NUMBER_OR_NULL, description: "Valor total a pagar, con IVA incluido." },
+    items: {
+      type: Type.ARRAY,
+      description: "Una entrada por línea del detalle. Vacío si no hay detalle legible.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          descripcion: { type: Type.STRING, description: "Descripción del producto o servicio." },
+          cantidad: NUMBER_OR_NULL,
+          precio_unitario: NUMBER_OR_NULL,
+          precio_total: NUMBER_OR_NULL,
+        },
+        required: ["descripcion", "cantidad", "precio_unitario", "precio_total"],
+      },
+    },
+  },
+  required: [
+    "ruc_emisor",
+    "razon_social_emisor",
+    "numero_comprobante",
+    "fecha_emision",
+    "subtotal_12",
+    "subtotal_0",
+    "iva",
+    "total",
+    "items",
+  ],
+};
+
+const PROMPT = [
+  "Eres un asistente contable que transcribe comprobantes ecuatorianos (facturas y notas de venta).",
+  "Extrae los datos de la imagen y devuelve ÚNICAMENTE el JSON del esquema, sin texto alrededor.",
+  "",
+  "Reglas:",
+  "- Transcribe lo que está impreso. No inventes, no completes ni estimes ningún dato.",
+  "- Si un campo no aparece o no se lee con seguridad, ponlo en null. Es preferible un null a un valor inventado.",
+  "- Los importes van como número, con punto decimal y sin símbolo de moneda ni separador de miles.",
+  "- La fecha de emisión va como YYYY-MM-DD. Ojo: en Ecuador se imprime dd/mm/aaaa, así que 05/08/2026 es el 2026-08-05.",
+  "- En `items` incluye una entrada por línea del detalle, en el orden impreso. Si el detalle no se lee, devuelve una lista vacía.",
+  "- No sumes ni recalcules totales: copia los que estén impresos. Si el documento no los muestra, van en null.",
+].join("\n");
+
+/**
+ * Manda la foto a Gemini y devuelve la factura ya estructurada.
+ *
+ * Devuelve un resultado discriminado en vez de lanzar para los desenlaces sobre
+ * los que el usuario puede actuar (foto ilegible, falta la clave, cuota agotada),
+ * para que la interfaz muestre algo útil en lugar de un fallo genérico.
  */
 export async function extractInvoiceFields(params: {
   base64Image: string;
+  mediaType: AcceptedImageType;
 }): Promise<ExtractionResult> {
   const mode = getVisionMode();
 
@@ -246,48 +292,108 @@ export async function extractInvoiceFields(params: {
   }
 
   if (mode === "mock") {
-    console.warn(
-      "[DEV] Credenciales de Google no encontradas. Usando datos simulados (Mock) para el OCR."
-    );
+    console.warn("[DEV] Falta GEMINI_API_KEY. Usando datos simulados (Mock) para la lectura.");
     await new Promise((resolve) => setTimeout(resolve, MOCK_DELAY_MS));
-    const { parsed, raw } = buildMockInvoice();
-    return { ok: true, parsed, raw, mock: true };
+    const parsed = buildMockInvoice();
+    return { ok: true, parsed, raw: JSON.stringify(parsed, null, 2), mock: true };
   }
 
+  let raw: string;
   try {
-    const [result] = await getClient().documentTextDetection({
-      image: { content: params.base64Image },
+    const response = await getClient().models.generateContent({
+      model: getModel(),
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: params.mediaType, data: params.base64Image } },
+            { text: PROMPT },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        // Transcribir no es una tarea creativa: se quiere la misma lectura de
+        // la misma foto, no una versión distinta en cada intento.
+        temperature: 0,
+      },
     });
 
-    if (result.error?.message) {
-      return {
-        ok: false,
-        kind: "api_error",
-        message: `Cloud Vision devolvió un error: ${result.error.message}`,
-      };
-    }
-
-    const raw = result.fullTextAnnotation?.text ?? "";
-    if (!raw.trim()) {
-      return {
-        ok: false,
-        kind: "no_text",
-        message:
-          "No se detectó texto en la imagen. Toma la foto de nuevo con más luz, enfocada y sin sombras.",
-      };
-    }
-
-    return { ok: true, parsed: parseInvoiceText(raw), raw };
+    raw = response.text?.trim() ?? "";
   } catch (error) {
-    const message = (error as Error).message ?? "error desconocido";
-    // Credential problems can also surface here rather than in the pre-check.
-    if (/could not load the default credentials|unable to detect a project|ENOENT/i.test(message)) {
-      return { ok: false, kind: "not_configured", message: MISSING_CREDENTIALS_MESSAGE };
-    }
+    return { ok: false, kind: "api_error", message: describeApiError(error) };
+  }
+
+  if (!raw) {
+    return {
+      ok: false,
+      kind: "no_text",
+      message:
+        "El modelo no devolvió nada legible de esta foto. Tómala de nuevo con más luz, enfocada y sin sombras.",
+    };
+  }
+
+  // El esquema hace improbable un JSON con otra forma, pero se valida igual:
+  // esto es lo que se guarda y luego se vuelca a Caja e inventario.
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(raw);
+  } catch {
+    console.error("[gemini] respuesta no es JSON:", raw.slice(0, 500));
     return {
       ok: false,
       kind: "api_error",
-      message: `No se pudo leer el documento con Cloud Vision: ${message}`,
+      message: "La respuesta del modelo no vino en el formato esperado. Intenta procesar de nuevo.",
     };
   }
+
+  const validated = ParsedInvoiceSchema.safeParse(candidate);
+  if (!validated.success) {
+    console.error("[gemini] JSON fuera de contrato:", validated.error.issues);
+    return {
+      ok: false,
+      kind: "api_error",
+      message: "La lectura llegó incompleta. Intenta procesar de nuevo o registra el documento a mano.",
+    };
+  }
+
+  return { ok: true, parsed: sanitize(validated.data), raw };
+}
+
+/**
+ * Endereza lo que el esquema no puede garantizar: que la fecha venga de verdad
+ * en ISO y que no queden descripciones vacías ocupando una línea del detalle.
+ */
+function sanitize(parsed: ParsedInvoice): ParsedInvoice {
+  return {
+    ...parsed,
+    fecha_emision: parsed.fecha_emision ? normalizeDate(parsed.fecha_emision) : null,
+    items: parsed.items.filter((item) => item.descripcion.trim().length > 0),
+  };
+}
+
+/** Traduce el fallo de la API a algo sobre lo que el dueño pueda actuar. */
+function describeApiError(error: unknown): string {
+  const message = (error as Error)?.message ?? "error desconocido";
+
+  if (error instanceof ApiError) {
+    if (error.status === 400 && /api[_ ]?key/i.test(message)) {
+      return "La GEMINI_API_KEY no es válida. Genera una nueva en Google AI Studio y actualízala.";
+    }
+    if (error.status === 403) {
+      return "La GEMINI_API_KEY no tiene permiso para usar este modelo. Revísala en Google AI Studio.";
+    }
+    if (error.status === 404) {
+      return `El modelo "${getModel()}" no existe o tu clave no lo alcanza. Cambia GEMINI_MODEL por uno disponible.`;
+    }
+    if (error.status === 429) {
+      return "Se agotó la cuota gratuita de lectura por ahora. Espera unos minutos y vuelve a intentar.";
+    }
+    if (error.status >= 500) {
+      return "El servicio de lectura está caído en este momento. Intenta de nuevo en un rato.";
+    }
+  }
+
+  return `No se pudo leer el documento: ${message}`;
 }

@@ -15,7 +15,7 @@ import { z } from "zod";
  * because the page passes it to a Client Component, and `extract.ts` is
  * `server-only`. See `getVisionMode()` for what each value means.
  */
-export type VisionMode = "google" | "mock" | "off";
+export type VisionMode = "gemini" | "mock" | "off";
 
 export const DOCUMENT_TYPES = ["SALE_NOTE", "SUPPLIER_INVOICE"] as const;
 export type DocumentTypeValue = (typeof DOCUMENT_TYPES)[number];

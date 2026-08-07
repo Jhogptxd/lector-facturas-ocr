@@ -85,7 +85,7 @@ export type ScanCoverage = "high" | "medium" | "low";
 export type ScanDraft = {
   id: string;
   docType: DocumentTypeValue;
-  /** Straight from the OCR parser — the same shape `parseInvoiceText` returns. */
+  /** Tal cual salió de la extracción: la forma que define `ParsedInvoiceSchema`. */
   parsed: ParsedInvoice;
   /** How much of the page the heuristics recovered, for the review warning. */
   coverage: ScanCoverage;
@@ -121,7 +121,7 @@ export async function extractScan(formData: FormData): Promise<ExtractScanResult
   if (!ACCEPTED_IMAGE_TYPES.includes(file.type as AcceptedImageType)) {
     return {
       ok: false,
-      message: `Formato no soportado (${file.type || "desconocido"}). Usa JPG, PNG, WEBP o GIF.`,
+      message: `Formato no soportado (${file.type || "desconocido"}). Usa JPG, PNG o WEBP.`,
     };
   }
   if (file.size > MAX_IMAGE_BYTES) {
@@ -136,7 +136,10 @@ export async function extractScan(formData: FormData): Promise<ExtractScanResult
   const mediaType = file.type as AcceptedImageType;
   const bytes = Buffer.from(await file.arrayBuffer());
 
-  const result = await extractInvoiceFields({ base64Image: bytes.toString("base64") });
+  const result = await extractInvoiceFields({
+    base64Image: bytes.toString("base64"),
+    mediaType,
+  });
   if (!result.ok) return { ok: false, message: result.message };
 
   const parsed = result.parsed;

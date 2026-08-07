@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Cap on the long edge before upload. Cloud Vision accepts bigger images, but a
- * phone photo at full resolution blows past the 8 MB request limit; 2576px keeps
- * printed invoice text well above the ~10px character height the OCR needs.
+ * Cap on the long edge before upload. Gemini accepts bigger images, but a phone
+ * photo at full resolution blows past the 8 MB request limit; 2576px keeps
+ * printed invoice text well above the character height the model needs to read
+ * the small print.
  */
 const MAX_EDGE = 2576;
 const JPEG_QUALITY = 0.9;
