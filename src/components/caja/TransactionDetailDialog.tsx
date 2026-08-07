@@ -9,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store/useStore";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -112,18 +111,17 @@ export function TransactionDetailDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="pr-6 text-base">{movement.concept}</DialogTitle>
-          <DialogDescription className="flex items-center gap-2">
-            <span
-              className={cn("text-lg font-bold", isIncome ? "text-success" : "text-destructive")}
-            >
-              {isIncome ? "+" : "-"}
-              {formatCurrency(movement.amount, currency)}
-            </span>
-            <Badge variant={isIncome ? "success" : "destructive"}>
-              {isIncome ? "Ingreso" : "Gasto"}
-            </Badge>
+          {/* Texto plano: DialogDescription es un <p> y no admite dentro nada
+              que renderice un div. */}
+          <DialogDescription>
+            {isIncome ? "Ingreso" : "Gasto"} registrado en Caja
           </DialogDescription>
         </DialogHeader>
+
+        <p className={cn("-mt-2 text-2xl font-bold", isIncome ? "text-success" : "text-destructive")}>
+          {isIncome ? "+" : "-"}
+          {formatCurrency(movement.amount, currency)}
+        </p>
 
         <dl className="divide-y divide-border rounded-lg border border-border text-sm">
           {rows.map((row) => (
