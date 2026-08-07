@@ -14,6 +14,7 @@ import { CloseRegisterDialog } from "@/components/caja/CloseRegisterDialog";
 import { VentaSheet } from "@/components/caja/VentaSheet";
 import { EditTransactionDialog } from "@/components/caja/EditTransactionDialog";
 import { DeleteTransactionDialog } from "@/components/caja/DeleteTransactionDialog";
+import { TransactionDetailDialog } from "@/components/caja/TransactionDetailDialog";
 import { MovementList, type MovementItem } from "@/components/caja/MovementList";
 
 type Summary = {
@@ -40,6 +41,7 @@ export function CajaClient({
   const [openDialog, setOpenDialog] = useState(false);
   const [closeDialog, setCloseDialog] = useState(false);
   const [ventaOpen, setVentaOpen] = useState(false);
+  const [viewingMovement, setViewingMovement] = useState<MovementItem | null>(null);
   const [editingMovement, setEditingMovement] = useState<MovementItem | null>(null);
   const [deletingMovement, setDeletingMovement] = useState<MovementItem | null>(null);
 
@@ -141,6 +143,15 @@ export function CajaClient({
       <MovementList
         items={filteredTransactions}
         currency={currency}
+        onView={setViewingMovement}
+        onEdit={setEditingMovement}
+        onDelete={setDeletingMovement}
+      />
+
+      <TransactionDetailDialog
+        movement={viewingMovement}
+        open={!!viewingMovement}
+        onOpenChange={(open) => !open && setViewingMovement(null)}
         onEdit={setEditingMovement}
         onDelete={setDeletingMovement}
       />

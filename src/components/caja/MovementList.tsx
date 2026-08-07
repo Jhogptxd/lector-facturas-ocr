@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Pencil, ScanLine, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -32,11 +32,13 @@ const PAYMENT_LABEL: Record<string, string> = {
 export function MovementList({
   items,
   currency,
+  onView,
   onEdit,
   onDelete,
 }: {
   items: MovementItem[];
   currency: string;
+  onView: (item: MovementItem) => void;
   onEdit: (item: MovementItem) => void;
   onDelete: (item: MovementItem) => void;
 }) {
@@ -57,30 +59,47 @@ export function MovementList({
             key={item.id}
             className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm"
           >
-            <div
-              className={cn(
-                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                isIncome ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
-              )}
+            {/* Abrir el detalle es un botón de verdad y no la fila entera: así
+                no queda un control interactivo envolviendo a los de corregir y
+                eliminar, y el teclado lo alcanza sin ayuda. */}
+            <button
+              type="button"
+              onClick={() => onView(item)}
+              aria-label={`Ver detalle de ${item.concept}`}
+              className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {isIncome ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{item.concept}</p>
-              <p className="text-xs text-muted-foreground">
-                {new Date(item.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })}
-                {item.contactName ? ` · ${item.contactName}` : ""}
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <span className={cn("text-sm font-semibold", isIncome ? "text-success" : "text-destructive")}>
-                {isIncome ? "+" : "-"}
-                {formatCurrency(item.amount, currency)}
-              </span>
-              <Badge variant={item.paymentMethod === "CREDIT" ? "warning" : "outline"} className="text-[10px]">
-                {PAYMENT_LABEL[item.paymentMethod] ?? item.paymentMethod}
-              </Badge>
-            </div>
+              <div
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                  isIncome ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+                )}
+              >
+                {isIncome ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <span className="truncate">{item.concept}</span>
+                  {/* Marca los movimientos que traen comprobante fotografiado,
+                      para que se note que el detalle tiene algo más que ver. */}
+                  {item.isFromScan && (
+                    <ScanLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(item.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })}
+                  {item.contactName ? ` · ${item.contactName}` : ""}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className={cn("text-sm font-semibold", isIncome ? "text-success" : "text-destructive")}>
+                  {isIncome ? "+" : "-"}
+                  {formatCurrency(item.amount, currency)}
+                </span>
+                <Badge variant={item.paymentMethod === "CREDIT" ? "warning" : "outline"} className="text-[10px]">
+                  {PAYMENT_LABEL[item.paymentMethod] ?? item.paymentMethod}
+                </Badge>
+              </div>
+            </button>
             <div className="flex shrink-0 flex-col gap-1">
               <button
                 type="button"

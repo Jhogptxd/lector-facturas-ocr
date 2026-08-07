@@ -1,7 +1,6 @@
 "use server";
 
-import { randomUUID } from "crypto";
-import { mkdir, unlink, writeFile } from "fs/promises";
+import { unlink } from "fs/promises";
 import path from "path";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -27,19 +26,42 @@ import {
   type DocumentTypeValue,
 } from "@/lib/vision/schema";
 
-/** Scans live outside `public/` so images are only reachable through an authenticated route. */
+/**
+ * Heredado: aquí se archivaban los escaneos, fuera de `public/` y alcanzables
+ * solo por una ruta autenticada. Ya nadie escribe en esta carpeta —el respaldo
+ * viaja como data URI dentro de la fila—, pero los borradores creados en local
+ * antes del cambio todavía apuntan a estos archivos.
+ */
 const SCAN_DIR = path.join(process.cwd(), ".data", "scans");
 
-const EXTENSION_BY_TYPE: Record<AcceptedImageType, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-};
+/**
+ * Tope de lo que se acepta archivar en la fila. El navegador ya comprime el
+ * respaldo a ~150 KB; este margen absorbe una foto que no llegó al objetivo sin
+ * dejar que una imagen sin comprimir infle la tabla. En Base64 el data URI pesa
+ * ~4/3 de estos bytes, así que el peor caso ronda los 530 KB por comprobante.
+ */
+const MAX_RECEIPT_BYTES = 400 * 1024;
 
 /**
- * Removes an archived scan image once the draft is resolved, so confirmed and
- * discarded documents stop consuming disk.
+ * Empaqueta el respaldo como `data:<tipo>;base64,...` para guardarlo en la
+ * base. Devuelve null si se pasa del tope: es preferible quedarse sin miniatura
+ * que engordar cada fila con la foto entera.
+ */
+function toReceiptDataUrl(bytes: Buffer, mediaType: AcceptedImageType): string | null {
+  if (bytes.byteLength > MAX_RECEIPT_BYTES) {
+    console.warn(
+      `[documentos] respaldo descartado: ${(bytes.byteLength / 1024).toFixed(0)} KB supera el tope de ${
+        MAX_RECEIPT_BYTES / 1024
+      } KB`
+    );
+    return null;
+  }
+  return `data:${mediaType};base64,${bytes.toString("base64")}`;
+}
+
+/**
+ * Removes a legacy archived scan image once the draft is resolved, so confirmed
+ * and discarded documents stop consuming disk.
  *
  * Never throws: by the time this runs the ledger write has committed, and an
  * orphaned file is a smaller problem than a failed confirmation. The path is
@@ -119,16 +141,23 @@ export async function extractScan(formData: FormData): Promise<ExtractScanResult
 
   const parsed = result.parsed;
 
-  let imagePath: string | null = null;
-  try {
-    await mkdir(SCAN_DIR, { recursive: true });
-    const filename = `${randomUUID()}.${EXTENSION_BY_TYPE[mediaType]}`;
-    await writeFile(path.join(SCAN_DIR, filename), bytes);
-    imagePath = filename;
-  } catch (error) {
-    // A failed archive copy must not throw away a successful read.
-    console.error("[documentos] no se pudo guardar la imagen del escaneo", error);
-  }
+  // El cliente manda dos copias de la misma foto: la de lectura, grande, que
+  // acaba de usar el OCR y ya no hace falta, y un respaldo ligero (<150 KB)
+  // pensado para que el dueño reconozca el documento después. Se archiva el
+  // ligero; el grande solo se usa si el navegador no pudo generarlo, y en ese
+  // caso casi siempre pasará del tope y se quedará sin miniatura.
+  const receipt = formData.get("receipt");
+  const archive =
+    receipt instanceof File &&
+    receipt.size > 0 &&
+    ACCEPTED_IMAGE_TYPES.includes(receipt.type as AcceptedImageType)
+      ? { bytes: Buffer.from(await receipt.arrayBuffer()), mediaType: receipt.type as AcceptedImageType }
+      : { bytes, mediaType };
+
+  // Va en la propia fila, no en disco: en Vercel el sistema de archivos es
+  // efímero y de solo lectura fuera de /tmp, así que un archivo escrito aquí se
+  // perdía en el siguiente despliegue (o ni llegaba a escribirse).
+  const receiptDataUrl = toReceiptDataUrl(archive.bytes, archive.mediaType);
 
   const coverage = parseCoverage(parsed);
 
@@ -138,8 +167,7 @@ export async function extractScan(formData: FormData): Promise<ExtractScanResult
       userId,
       docType,
       status: "DRAFT",
-      imagePath,
-      imageMediaType: imagePath ? mediaType : null,
+      receiptDataUrl,
       extractedJson: JSON.stringify(parsed),
       // OCR only identifies the issuer: raw text gives no reliable way to tell
       // the two parties apart, so the receiver stays empty for the user to fill.
@@ -174,7 +202,7 @@ export async function extractScan(formData: FormData): Promise<ExtractScanResult
       parsed,
       coverage,
       itemLinks: parsed.items.map(() => ({ productId: null, stockPreapplied: false })),
-      hasImage: imagePath !== null,
+      hasImage: receiptDataUrl !== null,
     },
   };
 }
@@ -338,13 +366,19 @@ export async function confirmScan(input: ConfirmScanInput): Promise<ConfirmScanR
     await generateDueDateReminders({ businessId: business.id });
   }
 
-  // The draft is resolved, so the photo has served its purpose. Done after the
-  // commit because filesystem work cannot join the database transaction.
-  await deleteScanImage(scan.imagePath);
-  await prisma.documentScan.update({
-    where: { id: scan.id },
-    data: { imagePath: null, imageMediaType: null },
-  });
+  // El archivo suelto de los escaneos antiguos ya cumplió: el borrador está
+  // resuelto. Se borra después del commit porque el sistema de archivos no
+  // puede entrar en la transacción de base de datos.
+  //
+  // `receiptDataUrl` NO se toca: justamente ahora empieza a servir, porque es el
+  // comprobante que el dueño abrirá desde el movimiento de Caja.
+  if (scan.imagePath) {
+    await deleteScanImage(scan.imagePath);
+    await prisma.documentScan.update({
+      where: { id: scan.id },
+      data: { imagePath: null, imageMediaType: null },
+    });
+  }
 
   revalidatePath("/documentos");
   revalidatePath("/");
@@ -543,7 +577,7 @@ export async function getScanDraft(scanId: string): Promise<ScanDraft | null> {
       productId: scan.items[index]?.productId ?? null,
       stockPreapplied: scan.items[index]?.stockPreapplied ?? false,
     })),
-    hasImage: scan.imagePath !== null,
+    hasImage: scan.receiptDataUrl !== null || scan.imagePath !== null,
   };
 }
 
@@ -591,6 +625,58 @@ export async function listScans(): Promise<ScanListItem[]> {
     createdAt: scan.createdAt.toISOString(),
     itemCount: scan._count.items,
   }));
+}
+
+export type TransactionDocument = {
+  scanId: string;
+  docType: DocumentTypeValue;
+  documentNumber: string | null;
+  issueDate: string | null;
+  issuerName: string | null;
+  /** Hay respaldo archivado: la miniatura se pide a `/api/scans/<id>/image`. */
+  hasReceipt: boolean;
+};
+
+/**
+ * El documento escaneado detrás de un movimiento de Caja, si lo hay.
+ *
+ * Se consulta al abrir el detalle y no junto a la lista de movimientos a
+ * propósito: el respaldo son ~200 KB de Base64 por fila, y adjuntarlo a las 200
+ * transacciones de la pantalla mandaría decenas de megas al navegador para
+ * mostrar, casi siempre, ninguna imagen. Por eso aquí solo se devuelve si
+ * existe —con un `count`, que no arrastra el Base64— y la miniatura se pide
+ * aparte por la ruta autenticada.
+ */
+export async function getTransactionDocument(
+  transactionId: string
+): Promise<TransactionDocument | null> {
+  const business = await getCurrentBusiness();
+
+  const scan = await prisma.documentScan.findFirst({
+    where: { transactionId, businessId: business.id },
+    select: {
+      id: true,
+      docType: true,
+      documentNumber: true,
+      issueDate: true,
+      issuerName: true,
+      imagePath: true,
+    },
+  });
+  if (!scan) return null;
+
+  const withReceipt = await prisma.documentScan.count({
+    where: { id: scan.id, NOT: { receiptDataUrl: null } },
+  });
+
+  return {
+    scanId: scan.id,
+    docType: scan.docType as DocumentTypeValue,
+    documentNumber: scan.documentNumber,
+    issueDate: scan.issueDate ? scan.issueDate.toISOString() : null,
+    issuerName: scan.issuerName,
+    hasReceipt: withReceipt > 0 || scan.imagePath !== null,
+  };
 }
 
 function sumSubtotals(parsed: ParsedInvoice): number | null {

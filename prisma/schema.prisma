@@ -330,6 +330,15 @@ model DocumentScan {
   docType    DocumentType
   status     ScanStatus   @default(DRAFT)
 
+  /// Respaldo del comprobante como data URI (`data:image/jpeg;base64,...`).
+  /// Vive en la fila y no en disco porque en Vercel el sistema de archivos es
+  /// efímero y de solo lectura fuera de /tmp. El cliente lo comprime a ~150 KB
+  /// antes de subirlo, y a diferencia de la copia que lee el OCR este respaldo
+  /// sobrevive a la confirmación: es lo que el dueño abre desde el movimiento.
+  receiptDataUrl String?
+
+  /// Copia en `.data/scans`, anterior al data URI. Solo la escribían los
+  /// escaneos hechos en local; se conservan para no romper esos borradores.
   imagePath      String?
   imageMediaType String?
 

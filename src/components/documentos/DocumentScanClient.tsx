@@ -24,7 +24,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { useStore } from "@/store/useStore";
 import { cn, formatCurrency } from "@/lib/utils";
-import { prepareImage } from "@/lib/vision/prepareImage";
+import { prepareImage, RECEIPT_MAX_BYTES } from "@/lib/vision/prepareImage";
 import {
   extractScan,
   confirmScan,
@@ -94,7 +94,15 @@ export function DocumentScanClient({
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const [docType, setDocType] = useState<DocumentTypeValue | null>(null);
-  const [preview, setPreview] = useState<{ url: string; file: File; note: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    url: string;
+    /** Alta resolución: es la que va al OCR. */
+    file: File;
+    /** Copia ligera que se archivará como respaldo del comprobante. */
+    receipt: File | null;
+    note: string;
+    warning: string | null;
+  } | null>(null);
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<ScanDraft | null>(null);
@@ -108,12 +116,22 @@ export function DocumentScanClient({
   async function handleFile(file: File | undefined) {
     if (!file) return;
     const prepared = await prepareImage(file);
+    const kb = (bytes: number) => `${(bytes / 1024).toFixed(0)} KB`;
+    const receipt = prepared.receipt;
+
     setPreview({
       url: prepared.previewUrl,
       file: prepared.file,
-      note: prepared.resized
-        ? `Redimensionada a ${prepared.width}×${prepared.height} px`
-        : `${(prepared.file.size / 1024).toFixed(0)} KB`,
+      receipt: receipt?.file ?? null,
+      // Se informan los dos pesos: el grande solo viaja al OCR y se descarta,
+      // el ligero es el que queda archivado.
+      note: receipt
+        ? `Lectura ${prepared.width}×${prepared.height} px (${kb(prepared.file.size)}) · respaldo ${receipt.width}×${receipt.height} px (${kb(receipt.bytes)})`
+        : `${prepared.width || "?"}×${prepared.height || "?"} px (${kb(prepared.file.size)})`,
+      warning:
+        receipt && !receipt.withinTarget
+          ? `El respaldo pesa ${kb(receipt.bytes)} y no bajó del límite de ${kb(RECEIPT_MAX_BYTES)}.`
+          : null,
     });
   }
 
@@ -163,6 +181,9 @@ export function DocumentScanClient({
       const formData = new FormData();
       formData.append("docType", docType);
       formData.append("image", preview.file);
+      // La copia ligera viaja junto a la de lectura: es la que queda archivada
+      // en la base como respaldo, y la que el dueño verá luego desde Caja.
+      if (preview.receipt) formData.append("receipt", preview.receipt);
 
       const result = await extractScan(formData);
       if (!result.ok) {
@@ -175,6 +196,11 @@ export function DocumentScanClient({
 
       if (result.draft.coverage === "low") {
         toast.warning("El OCR extrajo pocos campos. Verifica y completa todo a mano.");
+      }
+      // El servidor rechaza un respaldo demasiado pesado antes que engordar la
+      // fila. Se avisa aquí: los datos sí se guardan, pero sin foto de respaldo.
+      if (!result.draft.hasImage) {
+        toast.warning("No se pudo archivar la foto: el documento quedará sin comprobante adjunto.");
       }
     } catch (error) {
       toast.error((error as Error).message || "No se pudo procesar el documento.");
@@ -764,7 +790,7 @@ export function DocumentScanClient({
       )}
 
       <div className="space-y-2">
-        <Label>1. Tipo de documento *</Label>
+        <Label>1. ¿Qué vas a escanear? *</Label>
         <div className="grid grid-cols-2 gap-2">
           {(["SALE_NOTE", "SUPPLIER_INVOICE"] as const).map((type) => {
             const active = docType === type;
@@ -823,6 +849,9 @@ export function DocumentScanClient({
               className="max-h-64 w-full rounded-lg border border-border object-contain"
             />
             <p className="text-xs text-muted-foreground">{preview.note}</p>
+            {preview.warning && (
+              <p className="text-xs text-amber-600">{preview.warning}</p>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -836,24 +865,36 @@ export function DocumentScanClient({
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => cameraInputRef.current?.click()}
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border bg-card p-5 text-xs font-medium"
-            >
-              <Camera className="h-6 w-6 text-primary" />
-              Tomar foto
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border bg-card p-5 text-xs font-medium"
-            >
-              <Upload className="h-6 w-6 text-primary" />
-              Subir archivo
-            </button>
-          </div>
+          // La cámara no se abre hasta saber qué se está escaneando: el tipo
+          // decide si el documento entra como ingreso o como gasto, y
+          // preguntarlo después de la foto invita a equivocarse con la prisa.
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={!docType}
+                onClick={() => cameraInputRef.current?.click()}
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border bg-card p-5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Camera className="h-6 w-6 text-primary" />
+                Tomar foto
+              </button>
+              <button
+                type="button"
+                disabled={!docType}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border bg-card p-5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Upload className="h-6 w-6 text-primary" />
+                Subir archivo
+              </button>
+            </div>
+            {!docType && (
+              <p className="text-center text-xs text-muted-foreground">
+                Primero elige arriba qué vas a escanear.
+              </p>
+            )}
+          </>
         )}
       </div>
 
