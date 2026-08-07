@@ -129,7 +129,12 @@ export async function createManualDebt(input: CreateManualDebtInput) {
   };
 }
 
-export async function createDebtPayment(debtId: string, amount: number, paymentMethod: PaymentMethod) {
+export async function createDebtPayment(
+  debtId: string,
+  amount: number,
+  paymentMethod: PaymentMethod,
+  notes?: string | null
+) {
   const business = await getCurrentBusiness();
 
   const debt = await prisma.debt.findFirst({
@@ -148,6 +153,10 @@ export async function createDebtPayment(debtId: string, amount: number, paymentM
 
   const transactionType = debt.contact.type === "SUPPLIER" ? "EXPENSE" : "INCOME";
 
+  // Observación libre del abono (ej. "Cheque # 2264"). Se guarda como null
+  // cuando viene vacía para no dejar cadenas en blanco en la base.
+  const cleanNotes = notes?.trim() || null;
+
   const result = await prisma.$transaction(async (tx) => {
     const transaction = await tx.transaction.create({
       data: {
@@ -156,13 +165,17 @@ export async function createDebtPayment(debtId: string, amount: number, paymentM
         type: transactionType,
         amount,
         paymentMethod,
-        concept: `Abono a deuda - ${debt.contact.name}`,
+        // La nota se anexa al concepto para que también sea legible desde Caja
+        // y Reportes, que solo muestran transacciones.
+        concept: cleanNotes
+          ? `Abono a deuda - ${debt.contact.name} — ${cleanNotes}`
+          : `Abono a deuda - ${debt.contact.name}`,
         contactId: debt.contactId,
       },
     });
 
     await tx.debtPayment.create({
-      data: { debtId: debt.id, amount, paymentMethod, transactionId: transaction.id },
+      data: { debtId: debt.id, amount, paymentMethod, notes: cleanNotes, transactionId: transaction.id },
     });
 
     const newRemaining = Number(debt.remainingAmount) - amount;

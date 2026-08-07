@@ -1,10 +1,20 @@
 "use client";
 
-import { MessageCircle, Wallet } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, MessageCircle, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { buildWhatsAppCollectionMessage } from "@/lib/whatsapp";
+
+export type DebtPaymentItem = {
+  id: string;
+  amount: number;
+  paymentMethod: string;
+  /** Observación escrita al registrar el abono, ej. "Cheque # 2264". */
+  notes: string | null;
+  createdAt: string;
+};
 
 export type DebtItem = {
   id: string;
@@ -18,6 +28,13 @@ export type DebtItem = {
   createdDateLabel: string;
   createdTimeLabel: string;
   contact: { id: string; name: string; phone: string };
+  payments: DebtPaymentItem[];
+};
+
+const METHOD_LABEL: Record<string, string> = {
+  CASH: "Efectivo",
+  TRANSFER: "Transferencia",
+  CREDIT: "Crédito",
 };
 
 const STATUS_LABEL: Record<string, { label: string; variant: "warning" | "secondary" | "success" }> = {
@@ -41,6 +58,8 @@ export function DebtCard({
   onPay: () => void;
 }) {
   const status = STATUS_LABEL[debt.status] ?? STATUS_LABEL.PENDING;
+  const [showPayments, setShowPayments] = useState(false);
+  const payments = debt.payments ?? [];
 
   function handleWhatsApp() {
     const message = buildWhatsAppCollectionMessage({
@@ -94,6 +113,51 @@ export function DebtCard({
           </Button>
         </div>
       </div>
+
+      {payments.length > 0 && (
+        <div className="mt-2 border-t border-border pt-2">
+          <button
+            type="button"
+            onClick={() => setShowPayments((v) => !v)}
+            aria-expanded={showPayments}
+            className="flex w-full items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <span>
+              {payments.length} {payments.length === 1 ? "abono" : "abonos"}
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${showPayments ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {showPayments && (
+            <ul className="mt-2 space-y-2">
+              {payments.map((p) => (
+                <li key={p.id} className="rounded-lg bg-muted/50 px-2.5 py-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold">{formatCurrency(p.amount, currency)}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {new Date(p.createdAt).toLocaleDateString("es-CO", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {METHOD_LABEL[p.paymentMethod] ?? p.paymentMethod}
+                  </p>
+                  {p.notes && (
+                    <p className="mt-1 whitespace-pre-wrap break-words border-l-2 border-border pl-2 text-xs italic text-foreground/80">
+                      {p.notes}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

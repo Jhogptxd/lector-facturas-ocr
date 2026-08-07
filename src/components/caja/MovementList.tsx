@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -11,6 +11,10 @@ export type MovementItem = {
   createdAt: string;
   categoryName: string | null;
   contactName: string | null;
+  /** Número de líneas de venta: si es > 0, corregir el monto no toca el stock. */
+  saleItemCount: number;
+  /** El movimiento es el espejo de un abono a una deuda. */
+  isDebtPayment: boolean;
 };
 
 const PAYMENT_LABEL: Record<string, string> = {
@@ -19,7 +23,15 @@ const PAYMENT_LABEL: Record<string, string> = {
   CREDIT: "Fiado",
 };
 
-export function MovementList({ items, currency }: { items: MovementItem[]; currency: string }) {
+export function MovementList({
+  items,
+  currency,
+  onEdit,
+}: {
+  items: MovementItem[];
+  currency: string;
+  onEdit: (item: MovementItem) => void;
+}) {
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
@@ -61,6 +73,15 @@ export function MovementList({ items, currency }: { items: MovementItem[]; curre
                 {PAYMENT_LABEL[item.paymentMethod] ?? item.paymentMethod}
               </Badge>
             </div>
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              title="Corregir movimiento"
+              aria-label={`Corregir ${item.concept}`}
+              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
           </div>
         );
       })}

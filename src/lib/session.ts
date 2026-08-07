@@ -32,16 +32,18 @@ export async function getCurrentBusiness() {
   const userId = await getCurrentUserId();
   if (!userId) throw new Error("No autenticado");
 
-  let business = await prisma.business.findFirst({
+  const business = await prisma.business.findFirst({
     where: { userId },
     orderBy: { createdAt: "asc" },
   });
+  if (business) return business;
 
-  if (!business) {
-    business = await prisma.business.create({
-      data: { name: "Mi Negocio", userId },
-    });
-  }
+  // Una cookie puede sobrevivir al usuario que la emitió (por ejemplo si se
+  // repuebla la base). Crear el negocio a ciegas en ese caso viola la clave
+  // foránea y tumba la página con una excepción de servidor, así que se
+  // comprueba primero y se trata como sesión inválida.
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+  if (!user) throw new Error("Sesión inválida");
 
-  return business;
+  return prisma.business.create({ data: { name: "Mi Negocio", userId } });
 }

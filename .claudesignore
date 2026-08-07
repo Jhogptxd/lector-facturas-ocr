@@ -1,0 +1,52 @@
+# ==============================================================================
+# ARCHIVO: .claudesignore
+# PROYECTO: Next.js + Prisma (Clon de Treinta)
+# OBJETIVO: Ahorrar cuota de tokens y evitar lecturas innecesarias
+# ==============================================================================
+
+# 1. Dependencias (Extremadamente pesadas)
+node_modules/
+.pnp
+.pnp.js
+
+# 2. Archivos de bloqueo (Miles de líneas que la IA no necesita leer)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# 3. Bases de datos (Evita que lea registros binarios o tablas enteras)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+prisma/*.db
+prisma/dev.db
+
+# 4. Compilados y builds de Next.js (Archivos autogenerados enormes)
+.next/
+out/
+build/
+dist/
+.swc/
+
+# 5. Credenciales y variables de entorno (Por seguridad y ahorro)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.json.json
+google-credentials.json
+google-creds.json*
+*credentials*.json
+
+# 6. Logs (Texto basura para el contexto de la IA)
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 7. Metadatos de control de versiones
+.git/

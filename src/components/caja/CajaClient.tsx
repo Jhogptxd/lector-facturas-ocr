@@ -12,6 +12,7 @@ import { formatCurrency } from "@/lib/utils";
 import { OpenRegisterDialog } from "@/components/caja/OpenRegisterDialog";
 import { CloseRegisterDialog } from "@/components/caja/CloseRegisterDialog";
 import { VentaSheet } from "@/components/caja/VentaSheet";
+import { EditTransactionDialog } from "@/components/caja/EditTransactionDialog";
 import { MovementList, type MovementItem } from "@/components/caja/MovementList";
 
 type Summary = {
@@ -25,9 +26,12 @@ type Summary = {
 export function CajaClient({
   summary,
   transactions,
+  scope,
 }: {
   summary: Summary;
   transactions: MovementItem[];
+  /** Qué está listando la pantalla: la caja abierta o el día en curso. */
+  scope: "REGISTER" | "DAY";
 }) {
   const router = useRouter();
   const currency = useStore((s) => s.currency);
@@ -35,6 +39,7 @@ export function CajaClient({
   const [openDialog, setOpenDialog] = useState(false);
   const [closeDialog, setCloseDialog] = useState(false);
   const [ventaOpen, setVentaOpen] = useState(false);
+  const [editingMovement, setEditingMovement] = useState<MovementItem | null>(null);
 
   const [filterType, setFilterType] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
 
@@ -47,6 +52,9 @@ export function CajaClient({
     router.refresh();
   }
 
+  const scopeLabel =
+    scope === "REGISTER" ? "Caja abierta · turno actual" : "Hoy · movimientos fuera de caja";
+
   return (
     <div className="flex flex-col gap-4 px-4 pt-4">
       <Card className="border-primary/20 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-md">
@@ -54,6 +62,9 @@ export function CajaClient({
           <p className="text-xs font-medium uppercase tracking-wide text-primary-foreground/80">
             Balance neto (ingresos - gastos)
           </p>
+          {/* El alcance va en la tarjeta y en la lista: ambos salen del mismo
+              filtro, así que nunca pueden contradecirse. */}
+          <p className="text-xs text-primary-foreground/70">{scopeLabel}</p>
           <p className="mt-1 text-3xl font-bold">{formatCurrency(summary.netBalance, currency)}</p>
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -99,6 +110,15 @@ export function CajaClient({
         </Link>
       </Button>
 
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">
+          {scope === "REGISTER" ? "Movimientos de la caja abierta" : "Movimientos de hoy fuera de caja"}
+        </h2>
+        <span className="text-xs text-muted-foreground">
+          {transactions.length} {transactions.length === 1 ? "movimiento" : "movimientos"}
+        </span>
+      </div>
+
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
         {(["ALL", "INCOME", "EXPENSE"] as const).map((type) => (
           <button
@@ -116,7 +136,14 @@ export function CajaClient({
         ))}
       </div>
 
-      <MovementList items={filteredTransactions} currency={currency} />
+      <MovementList items={filteredTransactions} currency={currency} onEdit={setEditingMovement} />
+
+      <EditTransactionDialog
+        movement={editingMovement}
+        open={!!editingMovement}
+        onOpenChange={(open) => !open && setEditingMovement(null)}
+        onSuccess={refresh}
+      />
 
       <OpenRegisterDialog open={openDialog} onOpenChange={setOpenDialog} onSuccess={refresh} />
       <CloseRegisterDialog

@@ -306,6 +306,9 @@ model DebtPayment {
   debtId        String
   amount        Decimal
   paymentMethod PaymentMethod @default(CASH)
+  /// Observación libre del abono (ej. "Cheque # 2264", "Nota de crédito"),
+  /// escrita al registrar el pago. Opcional: los abonos previos no la tienen.
+  notes         String?
   transactionId String?
   createdAt     DateTime      @default(now())
 
