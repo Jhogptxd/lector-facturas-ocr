@@ -5,7 +5,8 @@ import { Prisma, PaymentMethod, TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentBusiness } from "@/lib/session";
 import { businessDayRange } from "@/lib/datetime";
-import { deductStockForSaleItems } from "@/lib/actions/inventario";
+import { deductStockForSaleItems } from "@/lib/stock";
+import { blockedReason, rollbackAndDelete } from "@/lib/transaction-rollback";
 
 export type SaleItemInput = {
   productId: string;
@@ -220,6 +221,48 @@ export async function updateTransaction(id: string, input: UpdateTransactionInpu
   return { id, amount: input.amount, concept };
 }
 
+/**
+ * Elimina un movimiento deshaciendo todo lo que provocó al crearse.
+ *
+ * Hay tres orígenes de efectos secundarios y cada uno se revierte a su manera:
+ * una venta normal descuenta stock vía SaleItem (y recetas); un escaneo
+ * confirmado mueve stock directo sobre el producto, sin SaleItem, guardando el
+ * detalle en DocumentScanItem; y un abono rebaja el saldo de una deuda.
+ *
+ * Se niega a borrar una venta a crédito que ya tenga abonos: eso destruiría el
+ * registro de dinero realmente cobrado, así que primero hay que borrar los
+ * abonos uno a uno.
+ */
+export async function deleteTransaction(id: string) {
+  const business = await getCurrentBusiness();
+
+  const existing = await prisma.transaction.findFirst({
+    where: { id, businessId: business.id },
+    include: {
+      saleItems: true,
+      debt: { include: { payments: true } },
+      debtPayments: { include: { debt: true } },
+      documentScan: { include: { items: true } },
+    },
+  });
+  if (!existing) throw new Error("Movimiento no encontrado.");
+
+  const blocked = blockedReason(existing);
+  if (blocked) throw new Error(blocked);
+
+  const summary = await prisma.$transaction((tx) => rollbackAndDelete(tx, existing));
+
+  revalidatePath("/");
+  revalidatePath("/cuentas-por-cobrar");
+  revalidatePath("/cuentas-por-pagar");
+  revalidatePath("/inventario");
+  revalidatePath("/reportes");
+  revalidatePath("/contactos");
+  revalidatePath("/documentos");
+
+  return summary;
+}
+
 export type TransactionFilters = {
   from?: string;
   to?: string;
@@ -293,6 +336,9 @@ export async function getShiftOverview() {
         contact: true,
         saleItems: { include: { product: true } },
         debtPayments: { select: { id: true } },
+        // La deuda y sus abonos deciden si el movimiento se puede borrar.
+        debt: { select: { id: true, _count: { select: { payments: true } } } },
+        documentScan: { select: { id: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 200,

@@ -1,36 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { Prisma, PrismaClient, ProductUnit } from "@prisma/client";
+import type { Prisma, ProductUnit } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentBusiness } from "@/lib/session";
-import type { SaleItemInput } from "@/lib/actions/caja";
 
-type TxClient = Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">;
-
-export async function deductStockForSaleItems(tx: TxClient, items: SaleItemInput[]) {
-  for (const item of items) {
-    if (item.variantId) {
-      await tx.productVariant.update({
-        where: { id: item.variantId },
-        data: { stock: { decrement: item.quantity } },
-      });
-    } else {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stock: { decrement: item.quantity } },
-      });
-    }
-
-    const recipes = await tx.recipe.findMany({ where: { productId: item.productId } });
-    for (const recipe of recipes) {
-      await tx.product.update({
-        where: { id: recipe.ingredientId },
-        data: { stock: { decrement: Number(recipe.quantityUsed) * item.quantity } },
-      });
-    }
-  }
-}
+// Los movimientos de stock viven en `@/lib/stock`, sin `server-only`, para que
+// la lógica de reversión pueda reutilizarlos y probarse de forma aislada.
 
 // ---------- Categories ----------
 

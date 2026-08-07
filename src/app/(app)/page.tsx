@@ -40,6 +40,9 @@ export default async function CajaPage() {
         contactName: t.contact?.name ?? null,
         saleItemCount: t.saleItems.length,
         isDebtPayment: t.debtPayments.length > 0,
+        hasDebt: t.debt !== null,
+        debtPaymentCount: t.debt?._count.payments ?? 0,
+        isFromScan: t.documentScan !== null,
       }))}
       scope={shift.scope}
     />

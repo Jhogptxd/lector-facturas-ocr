@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Pencil } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, cn } from "@/lib/utils";
 
@@ -15,6 +15,12 @@ export type MovementItem = {
   saleItemCount: number;
   /** El movimiento es el espejo de un abono a una deuda. */
   isDebtPayment: boolean;
+  /** Venta a crédito que generó una deuda; borrarla la elimina también. */
+  hasDebt: boolean;
+  /** Número de abonos ya cobrados sobre esa deuda: si hay, no se puede borrar. */
+  debtPaymentCount: number;
+  /** Proviene de una factura o nota escaneada que movió inventario. */
+  isFromScan: boolean;
 };
 
 const PAYMENT_LABEL: Record<string, string> = {
@@ -27,10 +33,12 @@ export function MovementList({
   items,
   currency,
   onEdit,
+  onDelete,
 }: {
   items: MovementItem[];
   currency: string;
   onEdit: (item: MovementItem) => void;
+  onDelete: (item: MovementItem) => void;
 }) {
   if (items.length === 0) {
     return (
@@ -73,15 +81,26 @@ export function MovementList({
                 {PAYMENT_LABEL[item.paymentMethod] ?? item.paymentMethod}
               </Badge>
             </div>
-            <button
-              type="button"
-              onClick={() => onEdit(item)}
-              title="Corregir movimiento"
-              aria-label={`Corregir ${item.concept}`}
-              className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex shrink-0 flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => onEdit(item)}
+                title="Corregir movimiento"
+                aria-label={`Corregir ${item.concept}`}
+                className="rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(item)}
+                title="Eliminar movimiento"
+                aria-label={`Eliminar ${item.concept}`}
+                className="rounded-lg border border-border p-2 text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         );
       })}
