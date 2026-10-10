@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
-import { Toaster } from "sonner";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
+import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import { ThemeScript } from "@/components/layout/ThemeScript";
+import { ThemedToaster } from "@/components/layout/ThemedToaster";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -47,10 +49,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        {/* Antes de cualquier pintado: evita el fogonazo blanco en tema oscuro. */}
+        <ThemeScript />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {children}
-        <Toaster richColors position="top-center" />
+        <ThemeProvider>
+          {children}
+          <ThemedToaster />
+        </ThemeProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

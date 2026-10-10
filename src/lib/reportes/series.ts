@@ -1,10 +1,16 @@
 /**
  * Bucketing for the ventas-vs-gastos chart.
  *
- * Pure and dependency-free on purpose: it lives outside `actions/reportes.ts`
- * because that file is `"use server"`, where every export has to be an async
- * server function — which would make this logic impossible to unit-test.
+ * Vive fuera de `actions/reportes.ts` porque ese archivo es `"use server"`,
+ * donde toda exportación tiene que ser una función async de servidor — lo que
+ * dejaría esta lógica imposible de testear. Acá es puro y determinista.
+ *
+ * Todos los cortes van en la zona del negocio, no en la del proceso: en Vercel
+ * el servidor corre en UTC, así que una venta de las 20:00 en Ecuador cae en el
+ * día siguiente UTC y aparecería en la barra equivocada.
  */
+
+import { APP_LOCALE, APP_TIME_ZONE, zoneOffsetMs } from "@/lib/datetime";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -35,32 +41,71 @@ export function pickGranularity(spanDays: number): SeriesGranularity {
   return "month";
 }
 
-/** Start of the bucket a date falls into, in local time. */
-export function bucketStart(date: Date, granularity: SeriesGranularity): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  if (granularity === "week") {
-    // Monday-first, matching how a shop owner reads a week.
-    const weekday = (d.getDay() + 6) % 7;
-    d.setDate(d.getDate() - weekday);
-  } else if (granularity === "month") {
-    d.setDate(1);
-  }
-  return d;
+/**
+ * Instante UTC que corresponde a unos campos de calendario de la zona.
+ *
+ * El desfase se consulta dos veces: la primera con una estimación, la segunda
+ * ya sobre el instante resultante, porque el desfase puede cambiar justo entre
+ * ambos (en una zona con horario de verano). En America/Bogota las dos vueltas
+ * dan lo mismo, pero así el cálculo no depende de que la zona sea fija.
+ */
+function fromZonedFields(utcFields: number, timeZone: string): Date {
+  let instant = new Date(utcFields - zoneOffsetMs(new Date(utcFields), timeZone));
+  instant = new Date(utcFields - zoneOffsetMs(instant, timeZone));
+  return instant;
 }
 
-function nextBucket(date: Date, granularity: SeriesGranularity): Date {
-  const d = new Date(date);
-  if (granularity === "day") d.setDate(d.getDate() + 1);
-  else if (granularity === "week") d.setDate(d.getDate() + 7);
-  else d.setMonth(d.getMonth() + 1);
-  return d;
+/** Campos de calendario de un instante, leídos en la zona del negocio. */
+function zonedFields(date: Date, timeZone: string) {
+  const shifted = new Date(date.getTime() + zoneOffsetMs(date, timeZone));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+    weekday: shifted.getUTCDay(),
+  };
 }
 
-function bucketLabel(date: Date, granularity: SeriesGranularity): string {
+/** Inicio del período al que pertenece una fecha, en la zona del negocio. */
+export function bucketStart(
+  date: Date,
+  granularity: SeriesGranularity,
+  timeZone: string = APP_TIME_ZONE
+): Date {
+  const { year, month, day, weekday } = zonedFields(date, timeZone);
+
   if (granularity === "month") {
-    return date.toLocaleDateString("es-CO", { month: "short", year: "2-digit" });
+    return fromZonedFields(Date.UTC(year, month, 1), timeZone);
   }
-  return date.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+  if (granularity === "week") {
+    // La semana arranca el lunes, que es como lee la semana un comerciante.
+    const sinceMonday = (weekday + 6) % 7;
+    return fromZonedFields(Date.UTC(year, month, day - sinceMonday), timeZone);
+  }
+  return fromZonedFields(Date.UTC(year, month, day), timeZone);
+}
+
+function nextBucket(date: Date, granularity: SeriesGranularity, timeZone: string): Date {
+  const { year, month, day } = zonedFields(date, timeZone);
+  if (granularity === "day") return fromZonedFields(Date.UTC(year, month, day + 1), timeZone);
+  if (granularity === "week") return fromZonedFields(Date.UTC(year, month, day + 7), timeZone);
+  return fromZonedFields(Date.UTC(year, month + 1, 1), timeZone);
+}
+
+function bucketLabel(date: Date, granularity: SeriesGranularity, timeZone: string): string {
+  const options: Intl.DateTimeFormatOptions =
+    granularity === "month"
+      ? { month: "short", year: "2-digit" }
+      : { day: "2-digit", month: "short" };
+
+  // Se arma desde las partes en vez de usar `format()` porque el español
+  // intercala un "de" ("25 de jul") que en un eje de móvil ocupa un tercio más
+  // de ancho y hace que las etiquetas se pisen.
+  return new Intl.DateTimeFormat(APP_LOCALE, { timeZone, ...options })
+    .formatToParts(date)
+    .filter((part) => part.type === "day" || part.type === "month" || part.type === "year")
+    .map((part) => part.value)
+    .join(" ");
 }
 
 /**
@@ -72,7 +117,8 @@ function bucketLabel(date: Date, granularity: SeriesGranularity): string {
 export function buildSeries(
   transactions: SeriesInput[],
   from: Date,
-  to: Date
+  to: Date,
+  timeZone: string = APP_TIME_ZONE
 ): { points: SeriesPoint[]; granularity: SeriesGranularity } {
   // For an open-ended range ("Todo") the window starts at the first movement,
   // not at the year 2000, or the series would be mostly empty buckets.
@@ -86,20 +132,20 @@ export function buildSeries(
 
   const buckets = new Map<string, SeriesPoint>();
   for (
-    let cursor = bucketStart(start, granularity);
+    let cursor = bucketStart(start, granularity, timeZone);
     cursor <= to;
-    cursor = nextBucket(cursor, granularity)
+    cursor = nextBucket(cursor, granularity, timeZone)
   ) {
     buckets.set(cursor.toISOString(), {
       key: cursor.toISOString(),
-      label: bucketLabel(cursor, granularity),
+      label: bucketLabel(cursor, granularity, timeZone),
       income: 0,
       expense: 0,
     });
   }
 
   for (const t of transactions) {
-    const key = bucketStart(t.createdAt, granularity).toISOString();
+    const key = bucketStart(t.createdAt, granularity, timeZone).toISOString();
     const bucket = buckets.get(key);
     if (!bucket) continue;
     const amount = Number(t.amount);

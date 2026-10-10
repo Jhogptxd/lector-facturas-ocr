@@ -15,6 +15,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { getTransactionDocument, type TransactionDocument } from "@/lib/actions/documentos";
 import { DOCUMENT_TYPE_LABEL } from "@/lib/vision/schema";
 import type { MovementItem } from "@/components/caja/MovementList";
+import { formatDateTime, formatDate } from "@/lib/datetime";
 
 const PAYMENT_LABEL: Record<string, string> = {
   CASH: "Efectivo",
@@ -85,10 +86,7 @@ export function TransactionDetailDialog({
   const rows: Array<{ label: string; value: string }> = [
     {
       label: "Fecha",
-      value: new Date(movement.createdAt).toLocaleString("es-CO", {
-        dateStyle: "long",
-        timeStyle: "short",
-      }),
+      value: formatDateTime(movement.createdAt, { dateStyle: "long", timeStyle: "short" }),
     },
     { label: "Método de pago", value: PAYMENT_LABEL[movement.paymentMethod] ?? movement.paymentMethod },
   ];
@@ -100,7 +98,7 @@ export function TransactionDetailDialog({
     if (scanDoc.issueDate) {
       rows.push({
         label: "Fecha de emisión",
-        value: new Date(scanDoc.issueDate).toLocaleDateString("es-CO", { dateStyle: "long" }),
+        value: formatDate(scanDoc.issueDate, { dateStyle: "long" }),
       });
     }
     if (scanDoc.issuerName) rows.push({ label: "Emisor leído", value: scanDoc.issuerName });

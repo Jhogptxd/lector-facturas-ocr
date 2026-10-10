@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Lock, ScanLine, ShoppingCart, Unlock } from "lucide-react";
+import { Lock, RefreshCw, ScanLine, ShoppingCart, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useStore } from "@/store/useStore";
-import { formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { AnimatedCurrency } from "@/components/ui/animated-number";
+import { tapFeedback } from "@/lib/haptics";
 import { OpenRegisterDialog } from "@/components/caja/OpenRegisterDialog";
 import { CloseRegisterDialog } from "@/components/caja/CloseRegisterDialog";
 import { VentaSheet } from "@/components/caja/VentaSheet";
@@ -52,8 +54,10 @@ export function CajaClient({
     return transactions.filter((t) => t.type === filterType);
   }, [transactions, filterType]);
 
+  const [isRefreshing, startRefresh] = useTransition();
+
   function refresh() {
-    router.refresh();
+    startRefresh(() => router.refresh());
   }
 
   const scopeLabel =
@@ -69,16 +73,28 @@ export function CajaClient({
           {/* El alcance va en la tarjeta y en la lista: ambos salen del mismo
               filtro, así que nunca pueden contradecirse. */}
           <p className="text-xs text-primary-foreground/70">{scopeLabel}</p>
-          <p className="mt-1 text-3xl font-bold">{formatCurrency(summary.netBalance, currency)}</p>
+          <AnimatedCurrency
+            value={summary.netBalance}
+            currency={currency}
+            className="mt-1 block text-3xl font-bold"
+          />
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg bg-white/15 px-3 py-2">
               <p className="text-xs text-primary-foreground/80">Ingresos</p>
-              <p className="font-semibold">{formatCurrency(summary.totalIncome, currency)}</p>
+              <AnimatedCurrency
+                value={summary.totalIncome}
+                currency={currency}
+                className="block font-semibold"
+              />
             </div>
             <div className="rounded-lg bg-white/15 px-3 py-2">
               <p className="text-xs text-primary-foreground/80">Gastos</p>
-              <p className="font-semibold">{formatCurrency(summary.totalExpense, currency)}</p>
+              <AnimatedCurrency
+                value={summary.totalExpense}
+                currency={currency}
+                className="block font-semibold"
+              />
             </div>
           </div>
 
@@ -88,7 +104,11 @@ export function CajaClient({
                 {summary.register ? "Caja abierta · Efectivo esperado" : "Caja cerrada"}
               </p>
               {summary.register && (
-                <p className="font-semibold">{formatCurrency(summary.cashBalance, currency)}</p>
+                <AnimatedCurrency
+                  value={summary.cashBalance}
+                  currency={currency}
+                  className="block font-semibold"
+                />
               )}
             </div>
             {summary.register ? (
@@ -118,26 +138,62 @@ export function CajaClient({
         <h2 className="text-sm font-semibold">
           {scope === "REGISTER" ? "Movimientos de la caja abierta" : "Movimientos de hoy fuera de caja"}
         </h2>
-        <span className="text-xs text-muted-foreground">
-          {transactions.length} {transactions.length === 1 ? "movimiento" : "movimientos"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {transactions.length} {transactions.length === 1 ? "movimiento" : "movimientos"}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              tapFeedback();
+              refresh();
+            }}
+            disabled={isRefreshing}
+            aria-label="Actualizar movimientos"
+            className="tappable rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-        {(["ALL", "INCOME", "EXPENSE"] as const).map((type) => (
-          <button
-            key={type}
-            onClick={() => setFilterType(type)}
-            className={
-              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
-              (filterType === type
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background text-muted-foreground")
-            }
-          >
-            {type === "ALL" ? "Todos" : type === "INCOME" ? "Ingresos" : "Gastos"}
-          </button>
-        ))}
+        {(["ALL", "INCOME", "EXPENSE"] as const).map((type) => {
+          const active = filterType === type;
+          const count =
+            type === "ALL"
+              ? transactions.length
+              : transactions.filter((t) => t.type === type).length;
+          return (
+            <button
+              key={type}
+              onClick={() => {
+                tapFeedback();
+                setFilterType(type);
+              }}
+              // `aria-pressed` marca el filtro elegido para quien no ve el color.
+              aria-pressed={active}
+              className={cn(
+                "tappable flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
+                active
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground"
+              )}
+            >
+              {type === "ALL" ? "Todos" : type === "INCOME" ? "Ingresos" : "Gastos"}
+              {/* El contador por filtro ahorra tocar para descubrir que está
+                  vacío. */}
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-[10px] tabular-nums",
+                  active ? "bg-primary-foreground/20" : "bg-muted"
+                )}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <MovementList

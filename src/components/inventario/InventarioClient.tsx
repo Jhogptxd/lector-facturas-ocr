@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Plus, Search } from "lucide-react";
+import { AlertTriangle, PackagePlus, Plus, Search, SearchX } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useStore } from "@/store/useStore";
 import { formatCurrency, cn } from "@/lib/utils";
 import { ProductFormSheet, type ProductFull } from "@/components/inventario/ProductFormSheet";
@@ -100,18 +101,45 @@ export function InventarioClient({
       </div>
 
       <div className="flex flex-col gap-2 pb-20">
-        {filtered.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-            No se encontraron productos.
-          </div>
-        )}
+        {filtered.length === 0 &&
+          (search || showLowStockOnly || categoryFilter !== "ALL" ? (
+            <EmptyState
+              icon={SearchX}
+              title="Ningún producto con esos filtros"
+              description="Prueba con otro término, otra categoría, o quita el filtro de stock bajo."
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("");
+                    setCategoryFilter("ALL");
+                    setShowLowStockOnly(false);
+                  }}
+                >
+                  Quitar filtros
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={PackagePlus}
+              title="El inventario está vacío"
+              description="Agrega tu primer producto con su costo y precio de venta; de ahí salen los márgenes de Reportes."
+              action={
+                <Button size="sm" onClick={() => setCreating(true)}>
+                  <PackagePlus className="mr-1.5 h-4 w-4" /> Nuevo producto
+                </Button>
+              }
+            />
+          ))}
         {filtered.map((p) => {
           const lowStock = p.stock <= p.minStockAlert;
           return (
             <button
               key={p.id}
               onClick={() => setEditingProduct(p)}
-              className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left shadow-sm"
+              className="tappable flex items-center gap-3 rounded-xl border border-border bg-card p-3 text-left shadow-sm active:bg-accent/40"
             >
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold text-muted-foreground">
                 {p.name.slice(0, 2).toUpperCase()}

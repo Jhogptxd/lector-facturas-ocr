@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DebtCard, type DebtItem } from "@/components/cuentas/DebtCard";
 import { PaymentDialog } from "@/components/cuentas/PaymentDialog";
 import { NewReceivableDialog } from "@/components/cuentas/NewReceivableDialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatCurrency } from "@/lib/utils";
 
 export function ReceivablesClient({
@@ -44,9 +45,11 @@ export function ReceivablesClient({
 
       <div className="space-y-3">
         {receivables.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-            No tienes cuentas por cobrar.
-          </div>
+          <EmptyState
+            icon={CheckCircle2}
+            title="Nadie te debe nada"
+            description="Cuando vendas a crédito o registres un fiado, el saldo pendiente aparecerá acá."
+          />
         )}
         {receivables.map((d) => (
           <DebtCard

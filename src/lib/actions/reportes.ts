@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentBusiness } from "@/lib/session";
+import { formatDateTime } from "@/lib/datetime";
 import { buildSeries } from "@/lib/reportes/series";
 
 export type ReportRange = { from?: string; to?: string };
@@ -91,7 +92,7 @@ export async function getSalesReportRows(range?: ReportRange) {
   });
 
   return transactions.map((t) => ({
-    Fecha: t.createdAt.toLocaleString("es-CO"),
+    Fecha: formatDateTime(t.createdAt),
     Concepto: t.concept,
     Monto: Number(t.amount),
     "Método de pago": t.paymentMethod,
@@ -110,8 +111,8 @@ export async function getCashReportRows(range?: ReportRange) {
   });
 
   return registers.map((r) => ({
-    Apertura: r.openedAt.toLocaleString("es-CO"),
-    Cierre: r.closedAt ? r.closedAt.toLocaleString("es-CO") : "Abierta",
+    Apertura: formatDateTime(r.openedAt),
+    Cierre: r.closedAt ? formatDateTime(r.closedAt) : "Abierta",
     "Monto inicial": Number(r.initialAmount),
     "Monto final": r.finalAmount ? Number(r.finalAmount) : "",
     Estado: r.status,
@@ -129,7 +130,7 @@ export async function getExpenseReportRows(range?: ReportRange) {
   });
 
   return transactions.map((t) => ({
-    Fecha: t.createdAt.toLocaleString("es-CO"),
+    Fecha: formatDateTime(t.createdAt),
     Concepto: t.concept,
     Monto: Number(t.amount),
     "Método de pago": t.paymentMethod,
@@ -155,7 +156,7 @@ export async function getDebtsReportRows(range?: ReportRange) {
   };
 
   return debts.map((d) => ({
-    Fecha: d.createdAt.toLocaleString("es-CO"),
+    Fecha: formatDateTime(d.createdAt),
     Tipo: d.contact.type === "SUPPLIER" ? "Por pagar" : "Por cobrar",
     Contacto: d.contact.name,
     Descripción: d.description ?? "",

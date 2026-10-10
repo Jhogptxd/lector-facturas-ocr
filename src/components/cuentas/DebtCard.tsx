@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { buildWhatsAppCollectionMessage } from "@/lib/whatsapp";
+import { formatDate } from "@/lib/datetime";
 
 export type DebtPaymentItem = {
   id: string;
@@ -87,7 +88,7 @@ export function DebtCard({
           </p>
           {debt.dueDate && (
             <p className="text-xs text-muted-foreground">
-              Vence {new Date(debt.dueDate).toLocaleDateString("es-CO")}
+              Vence {formatDate(debt.dueDate)}
             </p>
           )}
         </div>
@@ -137,7 +138,7 @@ export function DebtCard({
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-sm font-semibold">{formatCurrency(p.amount, currency)}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {new Date(p.createdAt).toLocaleDateString("es-CO", {
+                      {formatDate(p.createdAt, {
                         day: "2-digit",
                         month: "short",
                         year: "numeric",

@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DebtCard, type DebtItem } from "@/components/cuentas/DebtCard";
 import { PaymentDialog } from "@/components/cuentas/PaymentDialog";
 import { NewPayableDialog } from "@/components/cuentas/NewPayableDialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatCurrency } from "@/lib/utils";
 
 export function PayablesClient({
@@ -44,9 +45,11 @@ export function PayablesClient({
 
       <div className="space-y-3">
         {payables.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-            No tienes cuentas por pagar.
-          </div>
+          <EmptyState
+            icon={CheckCircle2}
+            title="No le debes nada a nadie"
+            description="Cuando registres una factura de proveedor a crédito, aparecerá acá con su fecha límite y su recordatorio."
+          />
         )}
         {payables.map((d) => (
           <DebtCard

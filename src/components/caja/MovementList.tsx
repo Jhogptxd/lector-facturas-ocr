@@ -1,6 +1,8 @@
-import { ArrowDownLeft, ArrowUpRight, Pencil, ScanLine, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Pencil, Receipt, ScanLine, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatCurrency, cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/datetime";
 
 export type MovementItem = {
   id: string;
@@ -44,9 +46,11 @@ export function MovementList({
 }) {
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-        Aún no hay movimientos registrados.
-      </div>
+      <EmptyState
+        icon={Receipt}
+        title="Aún no hay movimientos"
+        description="Registra una venta con el botón de arriba y aparecerá acá, con su detalle y su comprobante."
+      />
     );
   }
 
@@ -86,7 +90,7 @@ export function MovementList({
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(item.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })}
+                  {formatDateTime(item.createdAt)}
                   {item.contactName ? ` · ${item.contactName}` : ""}
                 </p>
               </div>

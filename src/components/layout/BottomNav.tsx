@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Wallet, Package, HandCoins, Users, BarChart3, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { tapFeedback } from "@/lib/haptics";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -20,6 +21,10 @@ const NAV_ITEMS = [
 
 const DEUDAS_ROUTES = ["/cuentas-por-cobrar", "/cuentas-por-pagar"];
 
+/** Pastilla que envuelve el icono activo. Da el blanco de toque de 44 px. */
+const ICON_SHELL =
+  "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200";
+
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -34,12 +39,16 @@ export function BottomNav() {
 
         <DropdownMenu>
           <DropdownMenuTrigger
+            onPointerDown={() => tapFeedback()}
+            aria-label="Deudas"
             className={cn(
-              "flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium outline-none transition-colors",
+              "tappable flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium outline-none",
               deudasActive ? "text-primary" : "text-muted-foreground"
             )}
           >
-            <HandCoins className={cn("h-5 w-5", deudasActive && "fill-primary/15")} strokeWidth={deudasActive ? 2.5 : 2} />
+            <span className={cn(ICON_SHELL, deudasActive && "bg-primary/10")}>
+              <HandCoins className="h-5 w-5" strokeWidth={deudasActive ? 2.5 : 2} />
+            </span>
             Deudas
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="center">
@@ -77,12 +86,18 @@ function NavLink({
   return (
     <Link
       href={href}
+      // `aria-current` es lo que anuncia el lector de pantalla; el color por sí
+      // solo no dice en qué sección estás.
+      aria-current={active ? "page" : undefined}
+      onPointerDown={() => tapFeedback()}
       className={cn(
-        "flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors",
+        "tappable flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium",
         active ? "text-primary" : "text-muted-foreground"
       )}
     >
-      <Icon className={cn("h-5 w-5", active && "fill-primary/15")} strokeWidth={active ? 2.5 : 2} />
+      <span className={cn(ICON_SHELL, active && "bg-primary/10")}>
+        <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
+      </span>
       {label}
     </Link>
   );

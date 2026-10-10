@@ -13,7 +13,7 @@ const FALLBACK_OFFSET_MS = -5 * 60 * 60 * 1000;
  * en vez de asumir -5 fijo, para no romperse si el negocio cambia de zona.
  * Nunca lanza: ante cualquier fallo de Intl cae al respaldo.
  */
-function zoneOffsetMs(date: Date, timeZone: string) {
+export function zoneOffsetMs(date: Date, timeZone: string = APP_TIME_ZONE) {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone,
@@ -136,4 +136,36 @@ export function resolveDebtTimestamp(debt: {
 export function buildDueSoonMessage(params: { supplierName: string; timestamp: DebtTimestamp }) {
   const { supplierName, timestamp } = params;
   return `Le recordamos pagar esta factura de ${supplierName}, registrada el ${timestamp.dayName} ${timestamp.dateLabel} a las ${timestamp.timeLabel}.`;
+}
+
+// ---------------------------------------------------------------------------
+// Formato para pantalla
+// ---------------------------------------------------------------------------
+
+/**
+ * Formatea una fecha en la zona horaria del negocio, siempre.
+ *
+ * Fijar la zona no es un detalle: estos textos se pintan en componentes de
+ * cliente, que Next también renderiza en el servidor. En Vercel ese proceso
+ * corre en UTC y el teléfono del usuario está en UTC-5, así que un
+ * `toLocaleString` sin `timeZone` produce dos textos distintos para el mismo
+ * dato — React lo detecta como desajuste de hidratación, descarta el HTML del
+ * servidor y vuelve a renderizar todo en el cliente. Además, durante ese
+ * instante la hora que se ve está cinco horas corrida.
+ */
+export function formatDateTime(
+  value: Date | string,
+  options: Intl.DateTimeFormatOptions = { dateStyle: "short", timeStyle: "short" }
+) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(APP_LOCALE, { timeZone: APP_TIME_ZONE, ...options }).format(date);
+}
+
+/** Solo la fecha, sin hora, en la zona del negocio. */
+export function formatDate(
+  value: Date | string,
+  options: Intl.DateTimeFormatOptions = { dateStyle: "short" }
+) {
+  return formatDateTime(value, options);
 }

@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Search, ChevronRight, Phone, MessageCircle, MapPin } from "lucide-react";
+import { Plus, Search, SearchX, ChevronRight, Phone, MessageCircle, MapPin, UserPlus, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useStore } from "@/store/useStore";
 import { formatCurrency, cn } from "@/lib/utils";
 import { ContactFormDialog } from "@/components/contactos/ContactFormDialog";
@@ -79,11 +80,30 @@ export function ContactosClient({ contacts }: { contacts: ContactRow[] }) {
       </div>
 
       <div className="flex flex-col gap-2">
-        {filtered.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-            No se encontraron clientes.
-          </div>
-        )}
+        {filtered.length === 0 &&
+          (search ? (
+            <EmptyState
+              icon={SearchX}
+              title={`Nada coincide con "${search}"`}
+              description="Se busca por nombre, teléfono y RUC o cédula."
+              action={
+                <Button size="sm" variant="outline" onClick={() => setSearch("")}>
+                  Limpiar búsqueda
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={Users}
+              title="Todavía no tienes contactos"
+              description="Créalos a mano o impórtalos desde la agenda del teléfono para empezar a venderles."
+              action={
+                <Button size="sm" onClick={() => setCreating(true)}>
+                  <UserPlus className="mr-1.5 h-4 w-4" /> Nuevo contacto
+                </Button>
+              }
+            />
+          ))}
         {filtered.map((c) => {
           const mapsUrl = c.address
             ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}`
@@ -94,7 +114,7 @@ export function ContactosClient({ contacts }: { contacts: ContactRow[] }) {
             <div
               key={c.id}
               onClick={() => router.push(`/contactos/${c.id}`)}
-              className="flex cursor-pointer flex-col gap-2 rounded-xl border border-border bg-card p-3 shadow-sm"
+              className="tappable flex cursor-pointer flex-col gap-2 rounded-xl border border-border bg-card p-3 shadow-sm active:bg-accent/40"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">

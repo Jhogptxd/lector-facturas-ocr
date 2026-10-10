@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { buildWhatsAppCollectionMessage } from "@/lib/whatsapp";
 import { ContactFormDialog } from "@/components/contactos/ContactFormDialog";
+import { formatDateTime } from "@/lib/datetime";
 
 const TYPE_LABEL: Record<string, string> = {
   CLIENT: "Cliente",
@@ -157,7 +158,7 @@ export function ContactDetailClient({
               <div>
                 <p className="text-sm font-medium">{t.concept}</p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(t.createdAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })}
+                  {formatDateTime(t.createdAt)}
                 </p>
               </div>
               <span className={t.type === "INCOME" ? "text-sm font-semibold text-success" : "text-sm font-semibold text-destructive"}>

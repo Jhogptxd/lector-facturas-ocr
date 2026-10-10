@@ -124,6 +124,11 @@
   }
   html {
     height: 100%;
+    /* Lo pisa ThemeScript en cuanto corre; esto cubre el instante anterior. */
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
   body {
     @apply bg-background text-foreground;
@@ -132,9 +137,38 @@
   }
 }
 
+/*
+ * Nadie que haya pedido menos movimiento debería recibir animaciones. Va al
+ * final para ganarle a las utilidades de Tailwind y a `tailwindcss-animate`.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /*
+   * Respuesta al toque para cualquier fila o tarjeta pulsable. En un móvil, un
+   * elemento que no se hunde al tocarlo se siente roto; `touch-manipulation`
+   * además quita el retardo de 300 ms que Safari deja para el doble toque.
+   */
+  .tappable {
+    @apply touch-manipulation transition-[transform,background-color] duration-150 active:scale-[0.985];
+  }
+
+  /* Franja de desplazamiento horizontal que respeta los bordes de la pantalla. */
+  .edge-fade {
+    mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
   }
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);

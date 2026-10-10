@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { formatDateTime } from "@/lib/datetime";
 
 /** jspdf-autotable stamps this on the document after each call; not in the jsPDF types. */
 type JsPDFWithAutoTable = jsPDF & { lastAutoTable: { finalY: number } };
@@ -76,7 +77,7 @@ export function exportFinancialPdf(params: {
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  const generatedAt = new Date().toLocaleString("es-CO", { dateStyle: "long", timeStyle: "short" });
+  const generatedAt = formatDateTime(new Date(), { dateStyle: "long", timeStyle: "short" });
   doc.text(`Generado el ${generatedAt}`, marginLeft, 25);
   doc.text(`Período: ${params.rangeLabel}`, marginLeft, 30);
 

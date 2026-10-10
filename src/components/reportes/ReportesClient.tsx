@@ -17,6 +17,7 @@ import {
   type ReportRange,
 } from "@/lib/actions/reportes";
 import { exportRowsToExcel, exportRowsToPdf, exportFinancialExcel, exportFinancialPdf } from "@/lib/export";
+import { formatDate } from "@/lib/datetime";
 
 /**
  * The charting library is ~90 kB of the bundle — more than the rest of this
@@ -67,7 +68,7 @@ export function ReportesClient({
     if (days === null) return "Todo el historial";
     const to = new Date();
     const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
-    const fmt = (d: Date) => d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const fmt = (d: Date) => formatDate(d, { day: "2-digit", month: "2-digit", year: "numeric" });
     return `${fmt(from)} - ${fmt(to)}`;
   }
 

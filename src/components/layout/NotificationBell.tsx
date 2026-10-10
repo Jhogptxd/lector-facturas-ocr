@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/datetime";
 import {
   markAllNotificationsRead,
   syncAndListNotifications,
@@ -87,10 +88,7 @@ export function NotificationBell({ initialNotifications }: { initialNotification
                 >
                   <p className="text-xs leading-relaxed">{n.message}</p>
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    {new Date(n.createdAt).toLocaleString("es-CO", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                    {formatDateTime(n.createdAt)}
                   </p>
                 </li>
               ))}
