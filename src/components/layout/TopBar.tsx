@@ -32,7 +32,7 @@ export function TopBar({
       <div>
         <p className="text-sm font-semibold leading-tight">{businessName}</p>
         {!isOnline && (
-          <p className="flex items-center gap-1 text-xs text-amber-600">
+          <p className="flex items-center gap-1 text-xs text-warning">
             <WifiOff className="h-3 w-3" /> Sin conexión{pendingCount > 0 ? ` · ${pendingCount} por sincronizar` : ""}
           </p>
         )}

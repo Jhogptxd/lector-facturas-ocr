@@ -63,6 +63,21 @@ En desarrollo, si `GEMINI_API_KEY` está vacía, `extractInvoiceFields` no llama
 
 Dos campos quedan vacíos a propósito: el **receptor** (una foto no permite distinguir con fiabilidad las dos partes, así que en una nota de venta hay que escribir el cliente a mano) y el **número de autorización**.
 
+## Interfaz
+
+Pensada para un teléfono en la mano y, muchas veces, de noche.
+
+- **Tema claro, oscuro o automático**, con el selector en la barra superior. La preferencia se guarda en el navegador y un script en línea la aplica antes del primer pintado, así que no hay fogonazo blanco al cargar en oscuro. «Automático» sigue al sistema y reacciona si cambia mientras la app está abierta.
+- **Esqueletos de carga por ruta** en vez de un spinner: conservan la silueta de la pantalla, así que nada salta de sitio cuando llegan los datos.
+- **Respuesta al toque** en filas, tarjetas y navegación, con una vibración corta donde el navegador la permite, y pastilla que marca la sección activa en la barra inferior.
+- **Saldos animados** en Caja: al registrar una venta el número sube a la vista en lugar de cambiar de golpe.
+- **Estados vacíos con salida**, que distinguen «todavía no hay nada» de «los filtros no encontraron nada» y ofrecen la acción correspondiente.
+- Todo lo anterior respeta `prefers-reduced-motion`: si el sistema pide menos movimiento, las animaciones se desactivan.
+
+Los colores viven como tokens en `globals.css` (`--primary`, `--warning-surface`, `--chart-income`…), nunca escritos a mano en los componentes: así el par claro/oscuro se decide en un solo sitio y nada se queda en blanco al cambiar de tema.
+
+Las fechas se formatean siempre con `formatDateTime` (`src/lib/datetime.ts`), fijado a la zona del negocio. No es cosmético: estos textos se pintan en componentes de cliente que Next también renderiza en el servidor, y en un host que corre en UTC un `toLocaleString` sin zona produce dos valores distintos para el mismo dato, lo que rompe la hidratación y muestra la hora corrida cinco horas.
+
 ## Requisitos previos
 
 - Node.js 18.18+ (recomendado 20+)

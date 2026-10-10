@@ -133,10 +133,10 @@ export function ContactDetailClient({
         </div>
 
         {totalPending > 0 && (
-          <div className="mt-3 flex items-center justify-between rounded-lg bg-amber-50 p-3">
+          <div className="mt-3 flex items-center justify-between rounded-lg bg-warning-surface p-3">
             <div>
-              <p className="text-xs text-amber-700">Saldo pendiente</p>
-              <p className="font-bold text-amber-800">{formatCurrency(totalPending, currency)}</p>
+              <p className="text-xs text-warning-foreground">Saldo pendiente</p>
+              <p className="font-bold text-warning-foreground">{formatCurrency(totalPending, currency)}</p>
             </div>
             <Button size="sm" variant="secondary" onClick={handleWhatsAppCollection}>
               <MessageCircle className="mr-1 h-3.5 w-3.5" /> Cobrar

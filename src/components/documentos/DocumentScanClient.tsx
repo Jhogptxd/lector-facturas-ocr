@@ -410,7 +410,7 @@ export function DocumentScanClient({
         </div>
 
         {draft.coverage !== "high" && (
-          <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="flex gap-2 rounded-lg border border-warning-border bg-warning-surface p-3 text-xs text-warning-foreground">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
               El OCR lee texto plano, así que puede omitir campos o líneas. Compara con la foto antes
@@ -676,7 +676,7 @@ export function DocumentScanClient({
             </div>
 
             {totalsDiverge && (
-              <p className="flex items-start gap-1.5 text-xs text-amber-700">
+              <p className="flex items-start gap-1.5 text-xs text-warning-foreground">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 La suma del detalle ({formatCurrency(itemsSum, currency)}) no coincide con los
                 subtotales ({formatCurrency(expectedItemsSum, currency)}). Se guardará el total que
@@ -761,7 +761,7 @@ export function DocumentScanClient({
       </div>
 
       {visionMode === "off" && (
-        <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+        <div className="flex gap-2 rounded-lg border border-warning-border bg-warning-surface p-3 text-xs leading-relaxed text-warning-foreground">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-semibold">Lectura automática no configurada</p>
@@ -776,7 +776,7 @@ export function DocumentScanClient({
       )}
 
       {visionMode === "mock" && (
-        <div className="flex gap-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-relaxed text-sky-900">
+        <div className="flex gap-2 rounded-lg border border-info-border bg-info-surface p-3 text-xs leading-relaxed text-info-foreground">
           <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-semibold">Modo de prueba (datos simulados)</p>
@@ -850,7 +850,7 @@ export function DocumentScanClient({
             />
             <p className="text-xs text-muted-foreground">{preview.note}</p>
             {preview.warning && (
-              <p className="text-xs text-amber-600">{preview.warning}</p>
+              <p className="text-xs text-warning">{preview.warning}</p>
             )}
             <Button
               variant="outline"

@@ -69,8 +69,12 @@ export function AnimatedCurrency({
 }) {
   const display = useCountUp(value);
   return (
+    // `formatCurrency` ya redondea según la moneda —0 decimales en COP, 2 en
+    // USD—, así que el valor va crudo: redondearlo aquí mostraría $143,50 como
+    // $144 en los negocios que facturan en dólares. `tabular-nums` mantiene el
+    // ancho fijo mientras los dígitos corren.
     <span className={className} style={{ fontVariantNumeric: "tabular-nums" }}>
-      {formatCurrency(Math.round(display), currency)}
+      {formatCurrency(display, currency)}
     </span>
   );
 }

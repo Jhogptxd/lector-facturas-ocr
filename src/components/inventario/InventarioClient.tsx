@@ -68,7 +68,7 @@ export function InventarioClient({
           onClick={() => setShowLowStockOnly((v) => !v)}
           className={cn(
             "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium",
-            showLowStockOnly ? "border-amber-400 bg-amber-50 text-amber-800" : "border-amber-200 bg-amber-50/60 text-amber-700"
+            showLowStockOnly ? "border-warning bg-warning-surface text-warning-foreground" : "border-warning-border bg-warning-surface/60 text-warning-foreground"
           )}
         >
           <AlertTriangle className="h-4 w-4" />

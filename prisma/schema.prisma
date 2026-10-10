@@ -224,6 +224,12 @@ model Transaction {
   debtPayments DebtPayment[]
   documentScan DocumentScan?
 
+  /// Caja y Reportes siempre filtran por negocio Y por rango de fechas a la vez.
+  /// Con dos índices sueltos Postgres solo puede aprovechar uno por consulta, así
+  /// que el compuesto es el que de verdad sirve; el de `createdAt` a secas se
+  /// queda porque lo usan los barridos de mantenimiento que no acotan negocio.
+  @@index([businessId, createdAt])
+  @@index([businessId, type, createdAt])
   @@index([businessId])
   @@index([cashRegisterId])
   @@index([createdAt])
