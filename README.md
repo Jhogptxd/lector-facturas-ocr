@@ -46,10 +46,12 @@ Los vínculos se guardan en el momento de elegirlos, no al confirmar. Esto no es
 | Variable | Descripción |
 | --- | --- |
 | `GEMINI_API_KEY` | Clave de la API de Gemini, gratuita y sin tarjeta desde [Google AI Studio](https://aistudio.google.com/apikey). Sin ella, en producción `/documentos` muestra un aviso y desactiva el procesado; en desarrollo entra en modo de prueba (abajo). |
-| `GEMINI_MODEL` | Modelo a usar. Opcional: por defecto `gemini-2.5-flash`. |
+| `GEMINI_MODEL` | Modelo a usar. Opcional: por defecto `gemini-flash-latest`. |
 | `VISION_MOCK` | `"off"` (también `"false"`, `"0"`, `"no"`) desactiva el modo de prueba en desarrollo, para ver el error real de credenciales. |
 
-> No pongas `gemini-1.5-flash`: la serie 1.5 quedó fuera de alcance para los proyectos nuevos de la API, así que una clave recién creada responde 404 al pedirlo.
+> El valor por defecto es un alias a propósito. Aquí ya se quemaron dos modelos clavados a mano: primero `gemini-1.5-flash`, cuando la serie 1.5 quedó fuera de alcance para los proyectos nuevos, y después `gemini-2.5-flash`, que una clave recién creada ya no alcanza. Cada retiro dejó la lectura muerta con un 404 hasta tocar el código; `gemini-flash-latest` sigue al flash vigente y sobrevive al siguiente.
+
+**Cuánto tarda.** Entre 20 y 30 segundos por factura, y más si Google devuelve 503 por saturación, cosa que pasa con frecuencia en la ruta de visión. La lectura reintenta sola dos veces antes de rendirse. Por eso `/documentos` declara `maxDuration = 300`: con el límite por defecto de Vercel (10 s) el proceso se cortaría siempre. En el plan Hobby Vercel recorta ese techo a 60 s, así que una lectura con reintentos puede quedarse corta; en Pro hay margen de sobra.
 
 A diferencia de Cloud Vision, la API de Gemini tiene capa gratuita real: no hace falta habilitar facturación ni registrar una tarjeta.
 

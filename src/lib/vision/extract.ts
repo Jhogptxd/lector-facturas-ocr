@@ -39,11 +39,19 @@ export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 /**
  * Modelo por defecto. Se puede fijar otro con `GEMINI_MODEL` sin tocar código.
  *
- * No es `gemini-1.5-flash` a propósito: la serie 1.5 quedó fuera de alcance
- * para los proyectos nuevos de la API de Gemini, así que una clave recién
- * creada responde 404 al pedirlo.
+ * Es un alias, no una versión fija, y eso es deliberado: aquí ya se quemaron
+ * dos modelos clavados a mano. Primero `gemini-1.5-flash`, cuando la serie 1.5
+ * quedó fuera de alcance para los proyectos nuevos; después `gemini-2.5-flash`,
+ * que una clave recién creada ya no alcanza —responde 404 pidiendo que se use
+ * la serie 3—. Cada retiro dejó la lectura de facturas muerta hasta que alguien
+ * tocó el código. `gemini-flash-latest` sigue apuntando al flash vigente, así
+ * que el próximo retiro no rompe nada.
+ *
+ * Probado contra la API el 2026-10-09: lee una factura completa (emisor, RUC,
+ * comprobante, fecha, subtotales, IVA, total y las tres líneas de detalle) sin
+ * errores.
  */
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-flash-latest";
 
 function getModel() {
   return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
@@ -300,25 +308,27 @@ export async function extractInvoiceFields(params: {
 
   let raw: string;
   try {
-    const response = await getClient().models.generateContent({
-      model: getModel(),
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: params.mediaType, data: params.base64Image } },
-            { text: PROMPT },
-          ],
+    const response = await withRetry(() =>
+      getClient().models.generateContent({
+        model: getModel(),
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: params.mediaType, data: params.base64Image } },
+              { text: PROMPT },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
+          // Transcribir no es una tarea creativa: se quiere la misma lectura de
+          // la misma foto, no una versión distinta en cada intento.
+          temperature: 0,
         },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        // Transcribir no es una tarea creativa: se quiere la misma lectura de
-        // la misma foto, no una versión distinta en cada intento.
-        temperature: 0,
-      },
-    });
+      })
+    );
 
     raw = response.text?.trim() ?? "";
   } catch (error) {
@@ -373,6 +383,42 @@ function sanitize(parsed: ParsedInvoice): ParsedInvoice {
   };
 }
 
+/** Esperas entre reintentos, en milisegundos. */
+const RETRY_DELAYS_MS = [1500, 4000];
+
+/**
+ * Reintenta solo los fallos que de verdad son pasajeros.
+ *
+ * La ruta de visión de Gemini devuelve 503 "high demand" con bastante
+ * frecuencia: midiendo contra la API real, una de cada dos lecturas fallaba al
+ * primer intento y salía bien al segundo. Sin esto el dueño ve "el servicio
+ * está caído", vuelve a tomar la foto y repite el trabajo para nada.
+ *
+ * Un 400, 403 o 404 no se reintenta: la clave o el modelo están mal y repetir
+ * no lo arregla. Un 429 tampoco: la cuota está agotada y reintentar la quema
+ * más rápido.
+ */
+async function withRetry<T>(call: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      lastError = error;
+      const transient = error instanceof ApiError && error.status >= 500;
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (!transient || delay === undefined) break;
+      console.warn(
+        `[gemini] ${error instanceof ApiError ? error.status : "error"} pasajero; reintentando en ${delay} ms`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
+
 /** Traduce el fallo de la API a algo sobre lo que el dueño pueda actuar. */
 function describeApiError(error: unknown): string {
   const message = (error as Error)?.message ?? "error desconocido";
@@ -391,7 +437,9 @@ function describeApiError(error: unknown): string {
       return "Se agotó la cuota gratuita de lectura por ahora. Espera unos minutos y vuelve a intentar.";
     }
     if (error.status >= 500) {
-      return "El servicio de lectura está caído en este momento. Intenta de nuevo en un rato.";
+      // Se llega aquí con los reintentos ya agotados, así que no tiene sentido
+      // sugerir "vuelve a intentar" sin más: la saturación lleva un rato.
+      return "El servicio de lectura de Google está saturado ahora mismo. Se reintentó sin suerte; prueba de nuevo en unos minutos o registra el documento a mano desde Caja.";
     }
   }
 
